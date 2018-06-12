@@ -29,6 +29,7 @@
 #include "kvm_i386.h"
 #include "hyperv.h"
 #include "hyperv-proto.h"
+#include "xen.h"
 
 #include "exec/gdbstub.h"
 #include "qemu/host-utils.h"
@@ -651,12 +652,6 @@ static bool hyperv_enabled(X86CPU *cpu)
             cpu->hyperv_ipi);
 }
 
-#define XEN_CPUID_SIGNATURE        0x40000000
-#define XEN_CPUID_VENDOR           0x40000001
-#define XEN_CPUID_HVM_MSR          0x40000002
-#define XEN_CPUID_TIME             0x40000003
-#define XEN_CPUID_HVM              0x40000004
-
 static bool xen_enabled_on_kvm(X86CPU *cpu)
 {
     return cpu->xen;
@@ -1058,7 +1053,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
         c = &cpuid_data.entries[cpuid_i++];
         c->function = XEN_CPUID_HVM_MSR;
         /* Number of hypercall-transfer pages */
-        c->eax = 0;
+        c->eax = 1;
         /* Hypercall MSR base address */
         c->ebx = XEN_CPUID_SIGNATURE;
         c->ecx = 0;
@@ -1091,6 +1086,14 @@ int kvm_arch_init_vcpu(CPUState *cs)
             if (cpu->xen_major_version >= 4 && cpu->xen_minor_version >= 6) {
                 c->eax |= XEN_HVM_CPUID_VCPU_ID_PRESENT;
                 c->ebx = cs->cpu_index;
+            }
+        }
+
+        if (kvm_check_extension(cs->kvm_state, KVM_CAP_XEN_HVM)) {
+            r = kvm_xen_set_hypercall_page(cs);
+            if (r) {
+                error_report("Failed to initialize Xen hypercall page %d", r);
+                abort();
             }
         }
 

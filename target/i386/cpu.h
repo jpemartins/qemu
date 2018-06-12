@@ -1483,6 +1483,11 @@ struct X86CPU {
     int32_t thread_id;
 
     int32_t hv_max_vps;
+
+    bool xen;
+    bool xen_vapic;
+    uint32_t xen_major_version;
+    uint32_t xen_minor_version;
 };
 
 static inline X86CPU *x86_env_get_cpu(CPUX86State *env)

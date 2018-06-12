@@ -19,6 +19,7 @@
 
 #include <linux/kvm.h>
 #include "standard-headers/asm-x86/kvm_para.h"
+#include "standard-headers/xen/arch-x86/cpuid.h"
 
 #include "qemu-common.h"
 #include "cpu.h"
@@ -650,6 +651,17 @@ static bool hyperv_enabled(X86CPU *cpu)
             cpu->hyperv_ipi);
 }
 
+#define XEN_CPUID_SIGNATURE        0x40000000
+#define XEN_CPUID_VENDOR           0x40000001
+#define XEN_CPUID_HVM_MSR          0x40000002
+#define XEN_CPUID_TIME             0x40000003
+#define XEN_CPUID_HVM              0x40000004
+
+static bool xen_enabled_on_kvm(X86CPU *cpu)
+{
+    return cpu->xen;
+}
+
 static int kvm_arch_set_tsc_khz(CPUState *cs)
 {
     X86CPU *cpu = X86_CPU(cs);
@@ -1023,6 +1035,68 @@ int kvm_arch_init_vcpu(CPUState *cs)
             c->eax = env->features[FEAT_HV_NESTED_EAX];
         }
     }
+
+    if (xen_enabled_on_kvm(cpu) && kvm_base == XEN_CPUID_SIGNATURE) {
+        struct kvm_cpuid_entry2 *xen_max_leaf;
+
+        memcpy(signature, "XenVMMXenVMM", 12);
+
+        xen_max_leaf = c = &cpuid_data.entries[cpuid_i++];
+        c->function = XEN_CPUID_SIGNATURE;
+        c->eax = XEN_CPUID_TIME;
+        c->ebx = signature[0];
+        c->ecx = signature[1];
+        c->edx = signature[2];
+
+        c = &cpuid_data.entries[cpuid_i++];
+        c->function = XEN_CPUID_VENDOR;
+        c->eax = cpu->xen_major_version << 16 | cpu->xen_minor_version;
+        c->ebx = 0;
+        c->ecx = 0;
+        c->edx = 0;
+
+        c = &cpuid_data.entries[cpuid_i++];
+        c->function = XEN_CPUID_HVM_MSR;
+        /* Number of hypercall-transfer pages */
+        c->eax = 0;
+        /* Hypercall MSR base address */
+        c->ebx = XEN_CPUID_SIGNATURE;
+        c->ecx = 0;
+        c->edx = 0;
+
+        c = &cpuid_data.entries[cpuid_i++];
+        c->function = XEN_CPUID_TIME;
+        c->eax = ((!!tsc_is_stable_and_known(env) << 1) |
+            (!!(env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_RDTSCP) << 2));
+        /* default=0 (emulate if necessary) */
+        c->ebx = 0;
+        /* guest tsc frequency */
+        c->ecx = env->user_tsc_khz;
+        /* guest tsc incarnation (migration count) */
+        c->edx = 0;
+
+        c = &cpuid_data.entries[cpuid_i++];
+        c->function = XEN_CPUID_HVM;
+        xen_max_leaf->eax = XEN_CPUID_HVM;
+        if (cpu->xen_major_version >= 4 && cpu->xen_minor_version >= 5) {
+            c->function = XEN_CPUID_HVM;
+
+            if (cpu->xen_vapic) {
+                c->eax |= XEN_HVM_CPUID_APIC_ACCESS_VIRT;
+                c->eax |= XEN_HVM_CPUID_X2APIC_VIRT;
+            }
+
+            c->eax |= XEN_HVM_CPUID_IOMMU_MAPPINGS;
+
+            if (cpu->xen_major_version >= 4 && cpu->xen_minor_version >= 6) {
+                c->eax |= XEN_HVM_CPUID_VCPU_ID_PRESENT;
+                c->ebx = cs->cpu_index;
+            }
+        }
+
+        kvm_base = KVM_CPUID_SIGNATURE_NEXT;
+    }
+
 
     if (cpu->expose_kvm) {
         memcpy(signature, "KVMKVMKVM\0\0\0", 12);

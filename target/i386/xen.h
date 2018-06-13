@@ -22,5 +22,6 @@
 #define XEN_CPUID_HVM              0x40000004
 
 int kvm_xen_set_hypercall_page(CPUState *env);
+int kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit);
 
 #endif

@@ -110,6 +110,9 @@ struct KVMState
     /* memory encryption */
     void *memcrypt_handle;
     int (*memcrypt_encrypt_data)(void *handle, uint8_t *ptr, uint64_t len);
+
+    /* xen guest state */
+    struct XenState xen;
 };
 
 KVMState *kvm_state;
@@ -137,6 +140,11 @@ static const KVMCapabilityInfo kvm_required_capabilites[] = {
     KVM_CAP_INFO(JOIN_MEMORY_REGIONS_WORKS),
     KVM_CAP_LAST_INFO
 };
+
+struct XenState *kvm_get_xen_state(KVMState *s)
+{
+    return &s->xen;
+}
 
 int kvm_get_max_memslots(void)
 {
@@ -347,6 +355,7 @@ int kvm_init_vcpu(CPUState *cpu)
     cpu->kvm_fd = ret;
     cpu->kvm_state = s;
     cpu->vcpu_dirty = true;
+    cpu->xen_state = &s->xen;
 
     mmap_size = kvm_ioctl(s, KVM_GET_VCPU_MMAP_SIZE, 0);
     if (mmap_size < 0) {

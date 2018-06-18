@@ -24,6 +24,7 @@
 #include "qemu-common.h"
 #include "cpu-qom.h"
 #include "hyperv-proto.h"
+#include "xen-proto.h"
 
 #ifdef TARGET_X86_64
 #define TARGET_LONG_BITS 64

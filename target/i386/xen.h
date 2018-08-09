@@ -24,4 +24,6 @@
 int kvm_xen_set_hypercall_page(CPUState *env);
 int kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit);
 
+void kvm_xen_init(XenState *xen);
+
 #endif

@@ -500,6 +500,8 @@ void kvm_irqchip_set_gsi(KVMState *s, unsigned int gsi);
 
 int kvm_irqchip_add_adapter_route(KVMState *s, AdapterInfo *adapter);
 int kvm_irqchip_add_hv_sint_route(KVMState *s, uint32_t vcpu, uint32_t sint);
+int kvm_irqchip_add_xen_evtchn_route(KVMState *s, uint32_t via, uint32_t vcpu,
+                                     uint32_t port);
 
 int kvm_irqchip_add_irqfd_notifier_gsi(KVMState *s, EventNotifier *n,
                                        EventNotifier *rn, int virq);

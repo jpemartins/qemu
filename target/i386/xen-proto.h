@@ -11,12 +11,23 @@
 #ifndef TARGET_I386_XEN_PROTO_H
 #define TARGET_I386_XEN_PROTO_H
 
+typedef struct XenCallbackVector {
+    int via;
+    int vector;
+    int virq;
+} XenCallbackVector;
+
 typedef struct XenState {
     struct shared_info *shared_info;
+    union {
+        struct XenCallbackVector cb;
+    };
 } XenState;
 
 typedef struct XenCPUState {
    struct vcpu_info *info;
+   /* per cpu vector */
+   struct XenCallbackVector cb;
 } XenCPUState;
 
 #endif

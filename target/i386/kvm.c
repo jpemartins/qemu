@@ -30,6 +30,7 @@
 #include "hyperv.h"
 #include "hyperv-proto.h"
 #include "xen.h"
+#include "hw/xen/xen.h"
 
 #include "exec/gdbstub.h"
 #include "qemu/host-utils.h"
@@ -1640,6 +1641,10 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
     has_pit_state2 = kvm_check_extension(s, KVM_CAP_PIT_STATE2);
 
     hv_vpindex_settable = kvm_check_extension(s, KVM_CAP_HYPERV_VP_INDEX);
+
+    if (!xen_mode) {
+        kvm_xen_init(kvm_get_xen_state(s));
+    }
 
     ret = kvm_get_supported_msrs(s);
     if (ret < 0) {

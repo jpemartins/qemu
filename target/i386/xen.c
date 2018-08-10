@@ -17,6 +17,10 @@
 #include "xen.h"
 #include "trace.h"
 #include "sysemu/sysemu.h"
+#include "monitor/monitor.h"
+#include "qapi/qmp/qdict.h"
+#include "qom/cpu.h"
+
 
 #define __XEN_INTERFACE_VERSION__ 0x00040400
 
@@ -619,5 +623,30 @@ int kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit)
     }
     default:
         return ret;
+    }
+}
+
+static int kvm_xen_vcpu_inject_upcall(X86CPU *cpu)
+{
+    XenCPUState *xcpu = &cpu->env.xen_vcpu;
+    CPUState *cs = CPU(cpu);
+
+    return kvm_set_irq(cs->kvm_state, xcpu->cb.virq, 0);
+}
+
+void hmp_xen_inject_callback(Monitor *mon, const QDict *qdict)
+{
+    int injected = 0, idx = qdict_get_try_int(qdict, "vcpu", -1);
+    CPUState *cpu;
+
+    CPU_FOREACH(cpu) {
+        if (idx == -1 || cpu->cpu_index == idx) {
+            kvm_xen_vcpu_inject_upcall(X86_CPU(cpu));
+            injected++;
+        }
+    }
+
+    if (!injected) {
+        monitor_printf(mon, "failed to inject events to vcpu %d\n", idx);
     }
 }

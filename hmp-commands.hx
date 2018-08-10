@@ -1900,5 +1900,18 @@ ETEXI
     },
 
 STEXI
+@item xen-callback-inject
+Inject hypervisor callback interrupt
+ETEXI
+
+    {
+        .name       = "xen-callback-inject",
+        .args_type  = "vcpu:i?",
+        .params     = "[vcpu]",
+        .help       = "inject hypervisor callback",
+        .cmd        = hmp_xen_inject_callback,
+    },
+
+STEXI
 @end table
 ETEXI

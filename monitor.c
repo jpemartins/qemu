@@ -90,6 +90,11 @@
 #include "hw/s390x/storage-attributes.h"
 #endif
 
+#if defined(TARGET_I386)
+#include "target/i386/xen.h"
+#endif
+
+
 /*
  * Supported types:
  *

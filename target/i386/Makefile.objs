@@ -9,7 +9,7 @@ obj-$(CONFIG_KVM) += kvm.o
 obj-$(call lnot,$(CONFIG_KVM)) += kvm-stub.o
 obj-$(CONFIG_HYPERV) += hyperv.o
 obj-$(call lnot,$(CONFIG_HYPERV)) += hyperv-stub.o
-obj-$(CONFIG_XEN) += xen.o
+obj-$(CONFIG_XEN) += xen.o xen_evtchn.o
 ifeq ($(CONFIG_WIN32),y)
 obj-$(CONFIG_HAX) += hax-all.o hax-mem.o hax-windows.o
 endif

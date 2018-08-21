@@ -17,17 +17,32 @@ typedef struct XenCallbackVector {
     int virq;
 } XenCallbackVector;
 
+typedef struct XenEvtChn {
+  int notify_vcpu_id;
+  int port;
+  int virq;
+#define XEN_EVTCHN_TYPE_VIRQ 0
+  int type;
+#define XEN_EVTCHN_STATE_FREE  0
+#define XEN_EVTCHN_STATE_INUSE 1
+  int state;
+} XenEvtChn;
+
 typedef struct XenState {
     struct shared_info *shared_info;
     union {
         struct XenCallbackVector cb;
     };
+    int port;
+    QemuMutex port_lock;
 } XenState;
 
 typedef struct XenCPUState {
    struct vcpu_info *info;
    /* per cpu vector */
    struct XenCallbackVector cb;
+#define NR_VIRQS 24
+   struct XenEvtChn *virq_to_evtchn[NR_VIRQS];
 } XenCPUState;
 
 #endif

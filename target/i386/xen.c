@@ -16,6 +16,7 @@
 #include "cpu.h"
 #include "xen.h"
 #include "trace.h"
+#include "xen_evtchn.h"
 #include "sysemu/sysemu.h"
 #include "monitor/monitor.h"
 #include "qapi/qmp/qdict.h"
@@ -125,9 +126,12 @@ int kvm_xen_set_hypercall_page(CPUState *env)
 void kvm_xen_init(XenState *xen)
 {
     qemu_mutex_init(&xen_global_mutex);
+    qemu_mutex_init(&xen->port_lock);
+
+    kvm_xen_evtchn_init(xen);
 }
 
-static void kvm_xen_run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data)
+void kvm_xen_run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data)
 {
     do_run_on_cpu(cpu, func, RUN_ON_CPU_HOST_PTR(data), &xen_global_mutex);
 }
@@ -516,21 +520,43 @@ err:
     return err ? HCALL_ERR : 0;
 }
 
-static int kvm_xen_hcall_evtchn_op(struct kvm_xen_exit *exit,
+static int kvm_xen_hcall_evtchn_op(struct kvm_xen_exit *exit, X86CPU *cpu,
                                    int cmd, uint64_t arg)
 {
     int err = -ENOSYS;
+    void *eop;
 
-    switch (cmd) {
-    case EVTCHNOP_init_control:
-        /* FIFO ABI */
-    default:
-        exit->u.hcall.result = err;
-        return 0;
+    eop = gva_to_hva(CPU(cpu), arg);
+    if (!eop) {
+        err = -EFAULT;
+        goto err;
     }
 
+    switch (cmd) {
+    case EVTCHNOP_bind_virq:
+        err = kvm_xen_evtchn_bind_virq(cpu, eop);
+        break;
+    case EVTCHNOP_close:
+        err = kvm_xen_evtchn_close(cpu, eop);
+        break;
+    case EVTCHNOP_unmask:
+        err = kvm_xen_evtchn_unmask(cpu, eop);
+        break;
+    case EVTCHNOP_status:
+        err = kvm_xen_evtchn_status(cpu, eop);
+        break;
+    /* FIFO ABI only */
+    case EVTCHNOP_init_control:
+    case EVTCHNOP_expand_array:
+    case EVTCHNOP_set_priority:
+    default:
+        err = -ENOSYS;
+        break;
+    }
+
+err:
     exit->u.hcall.result = err;
-    return err ? HCALL_ERR : 0;
+    return 0;
 }
 
 static int schedop_shutdown(CPUState *cs, uint64_t arg)
@@ -587,7 +613,7 @@ static int __kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit)
         return kvm_xen_hcall_evtchn_op_compat(exit, cpu,
                                               exit->u.hcall.params[0]);
     case __HYPERVISOR_event_channel_op:
-        return kvm_xen_hcall_evtchn_op(exit, exit->u.hcall.params[0],
+        return kvm_xen_hcall_evtchn_op(exit, cpu, exit->u.hcall.params[0],
                                        exit->u.hcall.params[1]);
     case __HYPERVISOR_vcpu_op:
         return kvm_xen_hcall_vcpu_op(exit, cpu,
@@ -626,7 +652,7 @@ int kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit)
     }
 }
 
-static int kvm_xen_vcpu_inject_upcall(X86CPU *cpu)
+int kvm_xen_vcpu_inject_upcall(X86CPU *cpu)
 {
     XenCPUState *xcpu = &cpu->env.xen_vcpu;
     CPUState *cs = CPU(cpu);

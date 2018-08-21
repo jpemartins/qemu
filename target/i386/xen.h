@@ -23,8 +23,10 @@
 
 int kvm_xen_set_hypercall_page(CPUState *env);
 int kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit);
+int kvm_xen_vcpu_inject_upcall(X86CPU *cpu);
 
 void kvm_xen_init(XenState *xen);
+void kvm_xen_run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data);
 
 void hmp_xen_inject_callback(Monitor *mon, const QDict *qdict);
 #endif

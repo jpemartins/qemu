@@ -1913,5 +1913,31 @@ ETEXI
     },
 
 STEXI
+@item xen-event-inject @var{port}
+Notify guest via event channel on port @var{port}
+ETEXI
+
+    {
+        .name       = "xen-event-inject",
+        .args_type  = "port:i",
+        .params     = "port",
+        .help       = "inject event channel",
+        .cmd        = hmp_xen_event_inject,
+    },
+
+STEXI
+@item xen-event-list @var{port}
+List event channels in the guest
+ETEXI
+
+    {
+        .name       = "xen-event-list",
+        .args_type  = "",
+        .params     = "",
+        .help       = "list event channel state",
+        .cmd        = hmp_xen_event_list,
+    },
+
+STEXI
 @end table
 ETEXI

@@ -158,8 +158,7 @@ static void evtchn_2l_vcpu_set_pending(X86CPU *cpu)
     kvm_xen_vcpu_inject_upcall(cpu);
 }
 
-static void __attribute__((unused)) evtchn_2l_set_pending(X86CPU *cpu,
-                                                          XenEvtChn *evtchn)
+static void evtchn_2l_set_pending(X86CPU *cpu, XenEvtChn *evtchn)
 {
     struct shared_info *shared_info = CPU(cpu)->xen_state->shared_info;
     struct vcpu_info *vcpu_info = cpu->env.xen_vcpu.info;
@@ -185,8 +184,7 @@ static void evtchn_2l_clear_pending(X86CPU *cpu, XenEvtChn *evtchn)
     clear_bit_atomic(port, (unsigned long *) shared_info->evtchn_pending);
 }
 
-static bool __attribute__((unused)) evtchn_2l_is_pending(X86CPU *cpu,
-                                                         XenEvtChn *evtchn)
+static bool evtchn_2l_is_pending(X86CPU *cpu, XenEvtChn *evtchn)
 {
     struct shared_info *shared_info = CPU(cpu)->xen_state->shared_info;
     int port = evtchn->port;
@@ -194,8 +192,7 @@ static bool __attribute__((unused)) evtchn_2l_is_pending(X86CPU *cpu,
     return !!test_bit(port, (unsigned long *) shared_info->evtchn_pending);
 }
 
-static bool __attribute__((unused)) evtchn_2l_is_masked(X86CPU *cpu,
-                                                        XenEvtChn *evtchn)
+static bool evtchn_2l_is_masked(X86CPU *cpu, XenEvtChn *evtchn)
 {
     struct shared_info *shared_info = CPU(cpu)->xen_state->shared_info;
     int port = evtchn->port;
@@ -203,8 +200,7 @@ static bool __attribute__((unused)) evtchn_2l_is_masked(X86CPU *cpu,
     return !!test_bit(port, (unsigned long *) shared_info->evtchn_mask);
 }
 
-static int __attribute__((unused)) evtchn_2l_state(X86CPU *cpu,
-                                                   XenEvtChn *evtchn)
+static int evtchn_2l_state(X86CPU *cpu, XenEvtChn *evtchn)
 {
     struct vcpu_info *vcpu_info = cpu->env.xen_vcpu.info;
     int port = evtchn->port;
@@ -353,5 +349,56 @@ int kvm_xen_evtchn_vcpu_init(X86CPU *cpu, struct vcpu_info *vcpu)
     kvm_xen_vcpu_inject_upcall(cpu);
 
     return 0;
+}
+
+void hmp_xen_event_list(Monitor *mon, const QDict *qdict)
+{
+    struct XenEvtChn *evtchn;
+    X86CPU *x86_cpu;
+    CPUState *cpu;
+    int i, j;
+
+    for (i = 0; i < EVTCHN_MAX_GROUPS; i++) {
+        for (j = 0; j < EVTCHN_PER_GROUP; j++) {
+            if (!evtchns[i]) {
+                continue;
+            }
+
+            evtchn = &evtchns[i][j];
+            cpu = qemu_get_cpu(evtchn->notify_vcpu_id);
+            x86_cpu = X86_CPU(cpu);
+
+            if (!evtchn) {
+                continue;
+            }
+            if (!evtchn->state) {
+                continue;
+            }
+
+            monitor_printf(mon, "port %4u [%c/%c/%d] vcpu %d\n",
+                           evtchn->port,
+                           evtchn_2l_is_pending(x86_cpu, evtchn) ? 'p' : ' ',
+                           evtchn_2l_is_masked(x86_cpu, evtchn) ? 'm' : ' ',
+                           evtchn_2l_state(x86_cpu, evtchn),
+                           evtchn->notify_vcpu_id);
+        }
+    }
+}
+
+void hmp_xen_event_inject(Monitor *mon, const QDict *qdict)
+{
+    int port = qdict_get_int(qdict, "port");
+    struct XenEvtChn *evtchn;
+    CPUState *cpu;
+
+    evtchn = evtchn_from_port(port);
+    if (!evtchn) {
+        return;
+    }
+
+    cpu = qemu_get_cpu(evtchn->notify_vcpu_id);
+    evtchn_2l_set_pending(X86_CPU(cpu), evtchn);
+    monitor_printf(mon, "evtchn_set_pending(port:%d,qcpu:%d,vcpu:%d)\n",
+                   port, cpu->cpu_index, evtchn->notify_vcpu_id);
 }
 

@@ -29,4 +29,6 @@ void kvm_xen_init(XenState *xen);
 void kvm_xen_run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data);
 
 void hmp_xen_inject_callback(Monitor *mon, const QDict *qdict);
+void hmp_xen_event_list(Monitor *mon, const QDict *qdict);
+void hmp_xen_event_inject(Monitor *mon, const QDict *qdict);
 #endif

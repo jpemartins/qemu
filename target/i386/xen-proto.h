@@ -22,6 +22,7 @@ typedef struct XenEvtChn {
   int port;
   int virq;
 #define XEN_EVTCHN_TYPE_VIRQ 0
+#define XEN_EVTCHN_TYPE_IPI  1
   int type;
 #define XEN_EVTCHN_STATE_FREE  0
 #define XEN_EVTCHN_STATE_INUSE 1

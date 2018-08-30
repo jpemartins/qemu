@@ -17,10 +17,12 @@
 
 int kvm_xen_evtchn_init(XenState *xen_state);
 
+int kvm_xen_evtchn_bind_ipi(X86CPU *cpu, void *arg);
 int kvm_xen_evtchn_bind_virq(X86CPU *cpu, void *arg);
 int kvm_xen_evtchn_close(X86CPU *cpu, void *arg);
 int kvm_xen_evtchn_unmask(X86CPU *cpu, void *arg);
 int kvm_xen_evtchn_status(X86CPU *cpu, void *arg);
+int kvm_xen_evtchn_send(X86CPU *cpu, void *arg);
 int kvm_xen_evtchn_vcpu_init(X86CPU *cpu, struct vcpu_info *info);
 
 #endif

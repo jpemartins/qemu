@@ -533,6 +533,9 @@ static int kvm_xen_hcall_evtchn_op(struct kvm_xen_exit *exit, X86CPU *cpu,
     }
 
     switch (cmd) {
+    case EVTCHNOP_bind_ipi:
+        err = kvm_xen_evtchn_bind_ipi(cpu, eop);
+        break;
     case EVTCHNOP_bind_virq:
         err = kvm_xen_evtchn_bind_virq(cpu, eop);
         break;
@@ -544,6 +547,9 @@ static int kvm_xen_hcall_evtchn_op(struct kvm_xen_exit *exit, X86CPU *cpu,
         break;
     case EVTCHNOP_status:
         err = kvm_xen_evtchn_status(cpu, eop);
+        break;
+    case EVTCHNOP_send:
+        err = kvm_xen_evtchn_send(cpu, eop);
         break;
     /* FIFO ABI only */
     case EVTCHNOP_init_control:
@@ -594,7 +600,7 @@ static int kvm_xen_hcall_sched_op(struct kvm_xen_exit *exit, X86CPU *cpu,
     }
 
     exit->u.hcall.result = err;
-    return err;
+    return err ? HCALL_ERR : 0;
 }
 
 static int __kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit)

@@ -21,6 +21,7 @@
 #include "qom/cpu.h"
 #include "xen_evtchn.h"
 #include "xen.h"
+#include "trace.h"
 
 #ifndef __XEN_INTERFACE_VERSION__
 #define __XEN_INTERFACE_VERSION__ 0x00040400
@@ -231,6 +232,33 @@ static void xen_vcpu_set_evtchn(CPUState *cpu, run_on_cpu_data data)
     xen_vcpu->virq_to_evtchn[evtchn->virq] = evtchn;
 }
 
+int kvm_xen_evtchn_bind_ipi(X86CPU *cpu, void *arg)
+{
+    struct evtchn_bind_ipi *out = arg;
+    struct evtchn_bind_ipi bind_ipi;
+    struct XenEvtChn *evtchn;
+    CPUState *dest;
+
+    memcpy(&bind_ipi, arg, sizeof(bind_ipi));
+
+    dest = qemu_get_cpu(bind_ipi.vcpu);
+    if (!dest) {
+        return -EINVAL;
+    }
+
+    evtchn = alloc_evtchn(CPU(cpu)->xen_state);
+    if (!evtchn) {
+        return -ENOMEM;
+    }
+
+    evtchn->type = XEN_EVTCHN_TYPE_IPI;
+    evtchn->notify_vcpu_id = bind_ipi.vcpu;
+
+    out->port = evtchn->port;
+
+    return 0;
+}
+
 int kvm_xen_evtchn_bind_virq(X86CPU *cpu, void *arg)
 {
     XenCPUState *destxcpu;
@@ -325,6 +353,9 @@ int kvm_xen_evtchn_status(X86CPU *cpu, void *arg)
     status.vcpu = evtchn->notify_vcpu_id;
 
     switch (type) {
+    case XEN_EVTCHN_TYPE_IPI:
+        status.status = EVTCHNSTAT_ipi;
+        break;
     case XEN_EVTCHN_TYPE_VIRQ:
         status.status = EVTCHNSTAT_virq;
         status.u.virq = evtchn->virq;
@@ -335,6 +366,31 @@ int kvm_xen_evtchn_status(X86CPU *cpu, void *arg)
 
     memcpy(arg, &status, sizeof(status));
 
+    return 0;
+}
+
+int kvm_xen_evtchn_send(X86CPU *cpu, void *arg)
+{
+    struct evtchn_send send;
+    struct XenEvtChn *evtchn;
+    CPUState *dest;
+
+    memcpy(&send, arg, sizeof(send));
+
+    evtchn = evtchn_from_port(send.port);
+    if (!evtchn) {
+        return -ENOENT;
+    }
+
+    dest = qemu_get_cpu(evtchn->notify_vcpu_id);
+    if (!dest) {
+        return -EINVAL;
+    }
+
+    evtchn_2l_set_pending(X86_CPU(dest), evtchn);
+
+    trace_kvm_xen_evtchn_send(CPU(cpu)->cpu_index, evtchn->notify_vcpu_id,
+                              send.port);
     return 0;
 }
 
@@ -375,12 +431,18 @@ void hmp_xen_event_list(Monitor *mon, const QDict *qdict)
                 continue;
             }
 
-            monitor_printf(mon, "port %4u [%c/%c/%d] vcpu %d\n",
+            monitor_printf(mon, "port %4u [%c/%c/%d] vcpu %d type %d ",
                            evtchn->port,
                            evtchn_2l_is_pending(x86_cpu, evtchn) ? 'p' : ' ',
                            evtchn_2l_is_masked(x86_cpu, evtchn) ? 'm' : ' ',
                            evtchn_2l_state(x86_cpu, evtchn),
-                           evtchn->notify_vcpu_id);
+                           evtchn->notify_vcpu_id, evtchn->type);
+
+            if (evtchn->type == XEN_EVTCHN_TYPE_VIRQ) {
+                monitor_printf(mon, "virq %d ", evtchn->virq);
+            }
+
+            monitor_printf(mon, "\n");
         }
     }
 }

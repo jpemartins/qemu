@@ -1003,6 +1003,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_MANUAL_DIRTY_LOG_PROTECT 166
 #define KVM_CAP_HYPERV_CPUID 167
 #define KVM_CAP_XEN_HVM_GUEST 168
+#define KVM_CAP_XEN_HVM_EVTCHN 169
 
 #ifdef KVM_CAP_IRQ_ROUTING
 
@@ -1478,6 +1479,25 @@ struct kvm_xen_hvm_attr {
                        __u32 vcpu;
                        __u64 gpa;
                } vcpu_attr;
+               struct kvm_xen_eventfd {
+
+#define XEN_EVTCHN_TYPE_VIRQ 0
+#define XEN_EVTCHN_TYPE_IPI  1
+                       __u32 type;
+                       __u32 port;
+                       __u32 vcpu;
+                       __s32 fd;
+
+#define KVM_XEN_EVENTFD_DEASSIGN       (1 << 0)
+#define KVM_XEN_EVENTFD_UPDATE         (1 << 1)
+                       __u32 flags;
+                       union {
+                               struct {
+                                       __u8 type;
+                               } virq;
+                               __u32 padding[2];
+                       };
+               } evtchn;
        } u;
 };
 
@@ -1486,6 +1506,8 @@ struct kvm_xen_hvm_attr {
 #define KVM_XEN_ATTR_TYPE_VCPU_INFO         0x1
 #define KVM_XEN_ATTR_TYPE_VCPU_TIME_INFO    0x2
 #define KVM_XEN_ATTR_TYPE_VCPU_RUNSTATE     0x3
+/* Available with KVM_CAP_XEN_HVM_EVTCHN */
+#define KVM_XEN_ATTR_TYPE_EVTCHN            0x4
 
 /* Secure Encrypted Virtualization command */
 enum sev_cmd_id {

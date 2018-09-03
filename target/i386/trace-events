@@ -21,4 +21,5 @@ kvm_xen_hypercall(int cpu, uint64_t input, uint64_t a0, uint64_t a1, uint64_t a2
 kvm_xen_set_shared_info(uint64_t gfn) "shared info at gfn 0x%" PRIx64
 kvm_xen_set_vcpu_attr(int cpu, int type, uint64_t gpa) "vcpu attr cpu %d type %d gpa 0x%" PRIu64
 kvm_xen_set_callback(int cpu, int virq, int vector, int via) "callback vcpu %d virq %d vector %d via %d"
+kvm_xen_evtchn_set(int flags, unsigned int port, int port_type) "flags 0x%x port %u port_type %d"
 kvm_xen_evtchn_send(int cpu, int dest, unsigned int port) "cpu %d notify_cpu %d port %u"

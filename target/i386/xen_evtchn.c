@@ -232,6 +232,44 @@ static void xen_vcpu_set_evtchn(CPUState *cpu, run_on_cpu_data data)
     xen_vcpu->virq_to_evtchn[evtchn->virq] = evtchn;
 }
 
+static int __kvm_set_xen_event(KVMState *s, XenEvtChn *e,
+                               EventNotifier *n, unsigned int flags)
+{
+    struct kvm_xen_eventfd xenevfd = {
+        .port = e->port,
+        .vcpu = e->notify_vcpu_id,
+        .type = e->type,
+        .fd = n ? event_notifier_get_fd(n) : -1,
+        .flags = flags,
+    };
+    struct kvm_xen_hvm_attr xha;
+    int r;
+
+    if (!kvm_check_extension(s, KVM_CAP_XEN_HVM_EVTCHN)) {
+        return -ENOSYS;
+    }
+
+    if (e->type == XEN_EVTCHN_TYPE_VIRQ) {
+        xenevfd.virq.type = e->virq;
+    }
+
+    xha.type = KVM_XEN_ATTR_TYPE_EVTCHN;
+    xha.u.evtchn = xenevfd;
+    r =  kvm_vm_ioctl(s, KVM_XEN_HVM_SET_ATTR, &xha);
+    trace_kvm_xen_evtchn_set(flags, xenevfd.port, xenevfd.type);
+    return r;
+}
+
+static int kvm_set_xen_event(KVMState *s, XenEvtChn *e, EventNotifier *n)
+{
+    return __kvm_set_xen_event(s, e, n, 0);
+}
+
+static int kvm_clear_xen_event(KVMState *s, XenEvtChn *e)
+{
+    return __kvm_set_xen_event(s, e, NULL, KVM_XEN_EVENTFD_DEASSIGN);
+}
+
 int kvm_xen_evtchn_bind_ipi(X86CPU *cpu, void *arg)
 {
     struct evtchn_bind_ipi *out = arg;
@@ -253,6 +291,8 @@ int kvm_xen_evtchn_bind_ipi(X86CPU *cpu, void *arg)
 
     evtchn->type = XEN_EVTCHN_TYPE_IPI;
     evtchn->notify_vcpu_id = bind_ipi.vcpu;
+
+    kvm_set_xen_event(dest->kvm_state, evtchn, NULL);
 
     out->port = evtchn->port;
 
@@ -308,6 +348,7 @@ int kvm_xen_evtchn_close(X86CPU *cpu, void *arg)
     }
 
     evtchn_2l_clear_pending(cpu, evtchn);
+    kvm_clear_xen_event(CPU(cpu)->kvm_state, evtchn);
 
     evtchn->state = XEN_EVTCHN_STATE_FREE;
     evtchn->notify_vcpu_id = 0;

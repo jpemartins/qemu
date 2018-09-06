@@ -1485,6 +1485,7 @@ struct kvm_xen_hvm_attr {
 #define XEN_EVTCHN_TYPE_VIRQ      0
 #define XEN_EVTCHN_TYPE_IPI       1
 #define XEN_EVTCHN_TYPE_INTERDOM  2
+#define XEN_EVTCHN_TYPE_UNBOUND   3
                        __u32 type;
                        __u32 port;
                        __u32 vcpu;

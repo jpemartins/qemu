@@ -135,7 +135,8 @@ int kvm_xen_evtchn_init(XenState *xen_state)
 
 static struct XenEvtChn *evtchn_from_port(int port)
 {
-    if (port <= 0 || !group_from_port(port)) {
+    if (port <= 0 || (groupid_from_port(port) >= EVTCHN_MAX_GROUPS) ||
+        !group_from_port(port)) {
         return NULL;
     }
 
@@ -251,7 +252,8 @@ static int __kvm_set_xen_event(KVMState *s, XenEvtChn *e,
 
     if (e->type == XEN_EVTCHN_TYPE_VIRQ) {
         xenevfd.virq.type = e->virq;
-    } else if (e->type == XEN_EVTCHN_TYPE_INTERDOM) {
+    } else if ((e->type == XEN_EVTCHN_TYPE_INTERDOM) ||
+               (e->type == XEN_EVTCHN_TYPE_UNBOUND)) {
         xenevfd.remote.domid = e->remote_dom;
         xenevfd.remote.port = e->remote_port;
     }
@@ -384,6 +386,52 @@ int kvm_xen_evtchn_bind_virq(X86CPU *cpu, void *arg)
     return 0;
 }
 
+int kvm_xen_evtchn_alloc_unbound(X86CPU *cpu, void *arg)
+{
+    struct evtchn_alloc_unbound *out = arg;
+    struct evtchn_alloc_unbound alloc;
+    struct XenEvtChn *evtchn;
+    int default_vcpu = 0;
+    CPUState *dest;
+    int r;
+
+    memcpy(&alloc, arg, sizeof(alloc));
+
+    dest = qemu_get_cpu(default_vcpu);
+    if (!dest) {
+        return -EINVAL;
+    }
+
+    evtchn = alloc_evtchn(CPU(cpu)->xen_state);
+    if (!evtchn) {
+        return -ENOMEM;
+    }
+
+    if (alloc.remote_dom == DOMID_SELF) {
+        alloc.remote_dom = dest->xen_state->domid;
+    }
+    if (alloc.dom == DOMID_SELF) {
+        alloc.dom = dest->xen_state->domid;
+    }
+
+    evtchn->type = XEN_EVTCHN_TYPE_UNBOUND;
+    evtchn->remote_dom = alloc.remote_dom;
+    evtchn->notify_vcpu_id = default_vcpu;
+    evtchn->state = XEN_EVTCHN_STATE_UNBOUND;
+
+    if (evtchn->remote_dom >= 0) {
+        r = kvm_set_xen_event(dest->kvm_state, evtchn, NULL);
+        if (r) {
+            evtchn->state = XEN_EVTCHN_STATE_FREE;
+            return -EINVAL;
+        }
+    }
+
+    out->port = evtchn->port;
+
+    return 0;
+}
+
 int kvm_xen_evtchn_close(X86CPU *cpu, void *arg)
 {
     struct evtchn_close close;
@@ -481,6 +529,7 @@ int kvm_xen_evtchn_send(X86CPU *cpu, void *arg)
 
     trace_kvm_xen_evtchn_send(CPU(cpu)->cpu_index, evtchn->notify_vcpu_id,
                               send.port);
+
     return 0;
 }
 

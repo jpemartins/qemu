@@ -26,9 +26,11 @@ typedef struct XenEvtChn {
 #define XEN_EVTCHN_TYPE_VIRQ      0
 #define XEN_EVTCHN_TYPE_IPI       1
 #define XEN_EVTCHN_TYPE_INTERDOM  2
+#define XEN_EVTCHN_TYPE_UNBOUND   3
   int type;
-#define XEN_EVTCHN_STATE_FREE  0
-#define XEN_EVTCHN_STATE_INUSE 1
+#define XEN_EVTCHN_STATE_FREE     0
+#define XEN_EVTCHN_STATE_INUSE    1
+#define XEN_EVTCHN_STATE_UNBOUND  2
   int state;
 } XenEvtChn;
 

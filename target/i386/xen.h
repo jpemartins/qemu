@@ -21,6 +21,7 @@
 #define XEN_CPUID_TIME             0x40000003
 #define XEN_CPUID_HVM              0x40000004
 
+int kvm_xen_set_domid(KVMState *kvm_state, XenState *xen);
 int kvm_xen_set_hypercall_page(CPUState *env);
 int kvm_xen_vcpu_init(CPUState *cs);
 int kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit);

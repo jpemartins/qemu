@@ -34,6 +34,7 @@ typedef struct XenState {
     union {
         struct XenCallbackVector cb;
     };
+    int domid;
     int port;
     QemuMutex port_lock;
 } XenState;

@@ -11,6 +11,7 @@
 #include "qemu/osdep.h"
 #include "qemu/main-loop.h"
 #include "qemu/log.h"
+#include "qemu/error-report.h"
 #include "linux/kvm.h"
 #include "exec/address-spaces.h"
 #include "cpu.h"
@@ -21,6 +22,7 @@
 #include "monitor/monitor.h"
 #include "qapi/qmp/qdict.h"
 #include "qom/cpu.h"
+#include "hw/xen/xen.h"
 
 
 #define __XEN_INTERFACE_VERSION__ 0x00040400
@@ -139,10 +141,45 @@ int kvm_xen_set_hypercall_page(CPUState *env)
 
 void kvm_xen_init(XenState *xen)
 {
+    kvm_xen_set_domid(kvm_state, xen);
+
     qemu_mutex_init(&xen_global_mutex);
     qemu_mutex_init(&xen->port_lock);
 
     kvm_xen_evtchn_init(xen);
+}
+
+int kvm_xen_set_domid(KVMState *kvm_state, XenState *xen)
+{
+    struct kvm_xen_hvm_attr xhd;
+    int r;
+
+    if (xen->domid != 0) {
+        return -EEXIST;
+    }
+
+    /* Domid 0 means invalid */
+    xen->domid = 0;
+
+    xhd.type = KVM_XEN_ATTR_TYPE_DOMID;
+    if (!xen_domid)
+        xhd.u.dom.domid = -1;
+    else
+        xhd.u.dom.domid = xen_domid;
+    r = kvm_vm_ioctl(kvm_state, KVM_XEN_HVM_SET_ATTR, &xhd);
+    if (r) {
+        return -EFAULT;
+    }
+
+    r = kvm_vm_ioctl(kvm_state, KVM_XEN_HVM_GET_ATTR, &xhd);
+    if (r || !xhd.u.dom.domid) {
+        return -EFAULT;
+    }
+
+    xen->domid = xhd.u.dom.domid;
+    trace_kvm_xen_set_domid(xen->domid);
+    xen_domid = xen->domid;
+    return r;
 }
 
 void kvm_xen_run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data)

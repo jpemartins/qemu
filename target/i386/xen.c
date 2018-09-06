@@ -748,6 +748,9 @@ static int kvm_xen_hcall_evtchn_op(struct kvm_xen_exit *exit, X86CPU *cpu,
     case EVTCHNOP_alloc_unbound:
         err = kvm_xen_evtchn_alloc_unbound(cpu, eop);
         break;
+    case EVTCHNOP_bind_vcpu:
+        err = kvm_xen_evtchn_bind_vcpu(cpu, eop);
+        break;
     case EVTCHNOP_close:
         err = kvm_xen_evtchn_close(cpu, eop);
         break;

@@ -432,6 +432,29 @@ int kvm_xen_evtchn_alloc_unbound(X86CPU *cpu, void *arg)
     return 0;
 }
 
+int kvm_xen_evtchn_bind_vcpu(X86CPU *cpu, void *arg)
+{
+    struct evtchn_bind_vcpu bind_vcpu;
+    struct XenEvtChn *evtchn;
+    CPUState *dest;
+
+    memcpy(&bind_vcpu, arg, sizeof(bind_vcpu));
+
+    dest = qemu_get_cpu(bind_vcpu.vcpu);
+    if (!dest) {
+        return -EINVAL;
+    }
+
+    evtchn = evtchn_from_port(bind_vcpu.port);
+    if (!evtchn) {
+        return -ENOENT;
+    }
+
+    evtchn->notify_vcpu_id = bind_vcpu.vcpu;
+
+    return 0;
+}
+
 int kvm_xen_evtchn_close(X86CPU *cpu, void *arg)
 {
     struct evtchn_close close;

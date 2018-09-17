@@ -25,4 +25,6 @@ int kvm_xen_evtchn_status(X86CPU *cpu, void *arg);
 int kvm_xen_evtchn_send(X86CPU *cpu, void *arg);
 int kvm_xen_evtchn_vcpu_init(X86CPU *cpu, struct vcpu_info *info);
 
+void evtchn_2l_set_pending(X86CPU *cpu, XenEvtChn *evtchn);
+
 #endif

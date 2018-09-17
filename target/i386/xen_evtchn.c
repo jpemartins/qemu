@@ -159,7 +159,7 @@ static void evtchn_2l_vcpu_set_pending(X86CPU *cpu)
     kvm_xen_vcpu_inject_upcall(cpu);
 }
 
-static void evtchn_2l_set_pending(X86CPU *cpu, XenEvtChn *evtchn)
+void evtchn_2l_set_pending(X86CPU *cpu, XenEvtChn *evtchn)
 {
     struct shared_info *shared_info = CPU(cpu)->xen_state->shared_info;
     struct vcpu_info *vcpu_info = cpu->env.xen_vcpu.info;

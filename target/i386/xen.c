@@ -75,6 +75,20 @@ static void *gva_to_hva(CPUState *cs, uint64_t gva)
     return gpa_to_hva(gva_to_gpa(cs, gva));
 }
 
+static uint64_t kvm_get_current_ns(CPUState *cs)
+{
+    struct kvm_clock_data data;
+    int ret;
+
+    ret = kvm_vm_ioctl(cs->kvm_state, KVM_GET_CLOCK, &data);
+    if (ret < 0) {
+        fprintf(stderr, "KVM_GET_CLOCK failed: %s\n", strerror(ret));
+                abort();
+    }
+
+    return data.clock;
+}
+
 static void arch_init_hypercall_page(CPUState *cs, void *addr)
 {
     CPUX86State *env = cs->env_ptr;
@@ -474,6 +488,135 @@ static int vcpuop_register_runstate_info(CPUState *cs, CPUState *target,
     return xen_set_vcpu_attr(target, KVM_XEN_ATTR_TYPE_VCPU_RUNSTATE, gpa);
 }
 
+static void xen_vcpu_timer_event(void *opaque)
+{
+    CPUState *cpu = opaque;
+    XenCPUState *xcpu = &X86_CPU(cpu)->env.xen_vcpu;
+    struct XenEvtChn *evtchn = xcpu->virq_to_evtchn[VIRQ_TIMER];
+
+    if (likely(evtchn)) {
+        evtchn_2l_set_pending(X86_CPU(cpu), evtchn);
+    }
+}
+
+static void xen_vcpu_periodic_timer_event(void *opaque)
+{
+    CPUState *cpu = opaque;
+    XenCPUState *xcpu = &X86_CPU(cpu)->env.xen_vcpu;
+    struct XenEvtChn *evtchn = xcpu->virq_to_evtchn[VIRQ_TIMER];
+    unsigned long now;
+
+    if (likely(evtchn)) {
+        evtchn_2l_set_pending(X86_CPU(cpu), evtchn);
+    }
+
+    now = kvm_get_current_ns(cpu);
+    timer_mod_ns(xcpu->periodic_timer, now + xcpu->period_ns);
+}
+
+static int xen_vcpu_timer_init(CPUState *cpu)
+{
+    XenCPUState *xcpu = &X86_CPU(cpu)->env.xen_vcpu;
+    QEMUTimer *timer;
+
+    if (xcpu->oneshot_timer) {
+        return 0;
+    }
+
+    timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, xen_vcpu_timer_event, cpu);
+    if (!timer) {
+        return -ENOMEM;
+    }
+
+    xcpu->oneshot_timer = timer;
+    return 0;
+}
+
+static int vcpuop_set_singleshot_timer(CPUState *cs, CPUState *target,
+                                       uint64_t arg)
+{
+    XenCPUState *xt = &X86_CPU(target)->env.xen_vcpu;
+    struct vcpu_set_singleshot_timer *sst;
+    long now, qemu_now, interval;
+
+    if (xen_vcpu_timer_init(target)) {
+        return -EFAULT;
+    }
+
+    sst = gva_to_hva(cs, arg);
+    if (!sst) {
+        return -EFAULT;
+    }
+
+    now = kvm_get_current_ns(cs);
+    qemu_now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    interval = sst->timeout_abs_ns - now;
+
+    if ((sst->flags & VCPU_SSHOTTMR_future) &&
+        sst->timeout_abs_ns < now) {
+        return -ETIME;
+    }
+
+    timer_mod_ns(xt->oneshot_timer, qemu_now + interval);
+
+    return 0;
+}
+
+static void vcpuop_stop_singleshot_timer(CPUState *cs, CPUState *target,
+                                         uint64_t arg)
+{
+    XenCPUState *xt = &X86_CPU(target)->env.xen_vcpu;
+
+    if (likely(xt->oneshot_timer)) {
+        timer_del(xt->oneshot_timer);
+    }
+}
+
+static int vcpuop_set_periodic_timer(CPUState *cs, CPUState *target,
+                                     uint64_t arg)
+{
+    XenCPUState *xt = &X86_CPU(target)->env.xen_vcpu;
+    struct vcpu_set_periodic_timer *spt;
+    unsigned long now;
+
+    if (!xt->periodic_timer) {
+        QEMUTimer *timer;
+
+        timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
+                             xen_vcpu_periodic_timer_event, target);
+        if (!timer) {
+            return -EFAULT;
+        }
+        xt->periodic_timer = timer;
+    }
+
+    spt = gva_to_hva(cs, arg);
+    if (!spt) {
+        return -EFAULT;
+    }
+
+    if (spt->period_ns) {
+        return -EFAULT;
+    }
+
+    timer_del(xt->periodic_timer);
+    xt->period_ns = spt->period_ns;
+
+    now = kvm_get_current_ns(cs);
+    timer_mod_ns(xt->periodic_timer, now + xt->period_ns);
+
+    return 0;
+}
+
+static void vcpuop_stop_periodic_timer(CPUState *cs, CPUState *target,
+                                       uint64_t arg)
+{
+    XenCPUState *xt = &X86_CPU(target)->env.xen_vcpu;
+
+    if (unlikely(xt->periodic_timer))
+        timer_del(xt->periodic_timer);
+}
+
 static int kvm_xen_hcall_vcpu_op(struct kvm_xen_exit *exit, X86CPU *cpu,
                                  int cmd, int vcpu_id, uint64_t arg)
 {
@@ -492,6 +635,24 @@ static int kvm_xen_hcall_vcpu_op(struct kvm_xen_exit *exit, X86CPU *cpu,
         }
     case VCPUOP_register_vcpu_info: {
             err = vcpuop_register_vcpu_info(cs, dest, arg);
+            break;
+        }
+    case VCPUOP_set_singleshot_timer: {
+            err = vcpuop_set_singleshot_timer(cs, dest, arg);
+            break;
+        }
+    case VCPUOP_stop_singleshot_timer: {
+            vcpuop_stop_singleshot_timer(cs, dest, arg);
+            err = 0;
+            break;
+        }
+    case VCPUOP_set_periodic_timer: {
+            err = vcpuop_set_periodic_timer(cs, dest, arg);
+            break;
+        }
+    case VCPUOP_stop_periodic_timer: {
+            vcpuop_stop_periodic_timer(cs, dest, arg);
+            err = 0;
             break;
         }
     }
@@ -603,11 +764,45 @@ static int kvm_xen_hcall_sched_op(struct kvm_xen_exit *exit, X86CPU *cpu,
     return err ? HCALL_ERR : 0;
 }
 
+static int kvm_xen_hcall_set_timer_op(struct kvm_xen_exit *exit, X86CPU *cpu,
+                                      uint64_t timeout)
+{
+    XenCPUState *xcpu = &cpu->env.xen_vcpu;
+    long qemu_now, now, offset = 0;
+    int err = -ENOSYS;
+
+    if (xen_vcpu_timer_init(CPU(cpu))) {
+            goto error;
+    }
+
+    qemu_now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    now = kvm_get_current_ns(CPU(cpu));
+    offset = timeout - now;
+
+    err = 0;
+    if (timeout == 0) {
+        timer_del(xcpu->oneshot_timer);
+    } else if (unlikely(timeout < now) || ((uint32_t) (offset >> 50) != 0)) {
+        offset = (50 * SCALE_MS);
+        timer_mod_ns(xcpu->oneshot_timer, qemu_now + offset);
+    } else {
+        xcpu->oneshot_timer->opaque = CPU(cpu);
+        timer_mod_ns(xcpu->oneshot_timer, qemu_now + offset);
+    }
+
+error:
+    exit->u.hcall.result = err;
+    return err ? HCALL_ERR : 0;
+}
+
 static int __kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit)
 {
     uint16_t code = exit->u.hcall.input;
 
     switch (code) {
+    case __HYPERVISOR_set_timer_op:
+        return kvm_xen_hcall_set_timer_op(exit, cpu,
+                                          exit->u.hcall.params[0]);
     case HVMOP_set_evtchn_upcall_vector:
         return kvm_xen_hcall_evtchn_upcall_vector(exit, cpu,
                                                   exit->u.hcall.params[0]);

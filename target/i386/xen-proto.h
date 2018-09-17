@@ -44,6 +44,9 @@ typedef struct XenCPUState {
    struct XenCallbackVector cb;
 #define NR_VIRQS 24
    struct XenEvtChn *virq_to_evtchn[NR_VIRQS];
+   struct QEMUTimer *oneshot_timer;
+   struct QEMUTimer *periodic_timer;
+   unsigned long period_ns;
 } XenCPUState;
 
 #endif

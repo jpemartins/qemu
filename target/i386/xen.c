@@ -260,12 +260,12 @@ static int kvm_xen_hcall_memory_op(struct kvm_xen_exit *exit,
                                    int cmd, uint64_t arg, X86CPU *cpu)
 {
     CPUState *cs = CPU(cpu);
-    int err = 0;
+    int err = -ENOSYS;
 
     switch (cmd) {
     case XENMEM_add_to_physmap: {
             struct xen_add_to_physmap *xatp;
-            struct shared_info *shi;
+            void *hva;
 
             xatp = gva_to_hva(cs, arg);
             if (!xatp) {
@@ -273,21 +273,22 @@ static int kvm_xen_hcall_memory_op(struct kvm_xen_exit *exit,
                 break;
             }
 
-            switch (xatp->space) {
-            case XENMAPSPACE_shared_info:
-                break;
-            default:
-                err = -ENOSYS;
-                break;
-            }
-
-            shi = gpa_to_hva(xatp->gpfn << PAGE_SHIFT);
-            if (!shi) {
+            hva = gpa_to_hva(xatp->gpfn << PAGE_SHIFT);
+            if (!hva) {
                 err = -EFAULT;
                 break;
             }
 
-            err = xen_set_shared_info(cs, shi, xatp->gpfn);
+            switch (xatp->space) {
+            case XENMAPSPACE_shared_info: {
+                err = xen_set_shared_info(cs, hva, xatp->gpfn);
+                break;
+            }
+            default:
+                break;
+            }
+
+            trace_kvm_xen_add_to_physmap(xatp->space, xatp->idx, xatp->gpfn);
             break;
          }
     }

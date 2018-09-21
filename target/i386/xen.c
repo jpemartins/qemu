@@ -858,6 +858,16 @@ int kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit)
     }
 }
 
+int kvm_xen_vcpu_init(CPUState *cs)
+{
+    if (!kvm_check_extension(cs->kvm_state, KVM_CAP_XEN_HVM) ||
+        !kvm_check_extension(cs->kvm_state, KVM_CAP_XEN_HVM_GUEST))
+        return -ENOTSUP;
+
+    kvm_xen_set_hypercall_page(cs);
+    return 0;
+}
+
 int kvm_xen_vcpu_inject_upcall(X86CPU *cpu)
 {
     XenCPUState *xcpu = &cpu->env.xen_vcpu;

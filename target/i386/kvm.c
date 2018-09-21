@@ -1090,12 +1090,9 @@ int kvm_arch_init_vcpu(CPUState *cs)
             }
         }
 
-        if (kvm_check_extension(cs->kvm_state, KVM_CAP_XEN_HVM)) {
-            r = kvm_xen_set_hypercall_page(cs);
-            if (r) {
-                error_report("Failed to initialize Xen hypercall page %d", r);
-                abort();
-            }
+        r = kvm_xen_vcpu_init(cs);
+        if (r < 0) {
+            goto fail;
         }
 
         kvm_base = KVM_CPUID_SIGNATURE_NEXT;

@@ -929,6 +929,7 @@ static int kvm_xen_hcall_gnttab_op(struct kvm_xen_exit *exit, X86CPU *cpu,
                                    int cmd, uint64_t arg, int count)
 {
     CPUState *cs = CPU(cpu);
+    XenState *xen = cs->xen_state;
     int err = -ENOSYS;
 
     switch (cmd) {
@@ -947,6 +948,27 @@ static int kvm_xen_hcall_gnttab_op(struct kvm_xen_exit *exit, X86CPU *cpu,
             break;
         }
 
+        err = 0;
+        break;
+    }
+    case GNTTABOP_query_size: {
+        struct gnttab_query_size *gqs;
+
+        gqs = gva_to_hva(cs, arg);
+        if (!gqs) {
+            err = -EFAULT;
+            break;
+        }
+
+        if (gqs->dom != DOMID_SELF) {
+            err = 0;
+            gqs->status = GNTST_permission_denied;
+            break;
+        }
+
+        gqs->nr_frames = xen->gnttab.nr_frames;
+        gqs->max_nr_frames = xen->gnttab.max_nr_frames;
+        gqs->status = GNTST_okay;
         err = 0;
         break;
     }

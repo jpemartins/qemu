@@ -1508,6 +1508,24 @@ struct kvm_xen_hvm_attr {
                struct {
                        __s32 domid;
                } dom;
+               struct kvm_xen_gnttab {
+
+#define KVM_XEN_GNTTAB_F_INIT           0
+#define KVM_XEN_GNTTAB_F_GROW          (1 << 0)
+                       __u32 flags;
+                       union {
+                               struct {
+                                    __u32 max_frames;
+                                    __u32 max_maptrack_frames;
+                                    __u64 initial_frame;
+                               } init;
+                               struct {
+                                    __u32 idx;
+                                    __u64 gfn;
+                               } grow;
+                               __u32 padding[3];
+                       };
+               } gnttab;
        } u;
 };
 
@@ -1520,6 +1538,7 @@ struct kvm_xen_hvm_attr {
 #define KVM_XEN_ATTR_TYPE_EVTCHN            0x4
 /* Available with KVM_CAP_XEN_HVM_DOM0 */
 #define KVM_XEN_ATTR_TYPE_DOMID             0x5
+#define KVM_XEN_ATTR_TYPE_GNTTAB            0x6
 
 /* Secure Encrypted Virtualization command */
 enum sev_cmd_id {

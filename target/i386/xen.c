@@ -34,6 +34,7 @@
 #include "standard-headers/xen/vcpu.h"
 #include "standard-headers/xen/sched.h"
 #include "standard-headers/xen/event_channel.h"
+#include "standard-headers/xen/grant_table.h"
 
 #define PAGE_OFFSET    0xffffffff80000000UL
 #define PAGE_SHIFT     12
@@ -256,6 +257,33 @@ static int xen_set_shared_info(CPUState *cs, struct shared_info *shi,
     return err;
 }
 
+static int xen_set_gnttab_frame(CPUState *cs, void *frame,
+                                uint32_t idx, uint64_t gfn)
+{
+    struct kvm_xen_hvm_attr xhgt;
+    XenState *xen = cs->xen_state;
+    int err;
+
+    if (idx < xen->gnttab.nr_frames &&
+        idx >= xen->gnttab.max_nr_frames) {
+        return -EINVAL;
+    }
+
+    xhgt.type = KVM_XEN_ATTR_TYPE_GNTTAB;
+    xhgt.u.gnttab.flags = KVM_XEN_GNTTAB_F_GROW;
+    xhgt.u.gnttab.grow.idx = idx;
+    xhgt.u.gnttab.grow.gfn = gfn;
+    err = kvm_vm_ioctl(cs->kvm_state, KVM_XEN_HVM_SET_ATTR, &xhgt);
+    if (!err) {
+        if (!idx) {
+            g_free(xen->gnttab.frames[idx]);
+        }
+        xen->gnttab.frames[idx] = frame;
+        xen->gnttab.nr_frames++;
+    }
+    return err;
+}
+
 static int kvm_xen_hcall_memory_op(struct kvm_xen_exit *exit,
                                    int cmd, uint64_t arg, X86CPU *cpu)
 {
@@ -282,6 +310,10 @@ static int kvm_xen_hcall_memory_op(struct kvm_xen_exit *exit,
             switch (xatp->space) {
             case XENMAPSPACE_shared_info: {
                 err = xen_set_shared_info(cs, hva, xatp->gpfn);
+                break;
+            }
+            case XENMAPSPACE_grant_table: {
+                err = xen_set_gnttab_frame(cs, hva, xatp->idx, xatp->gpfn);
                 break;
             }
             default:
@@ -847,6 +879,83 @@ error:
     return err ? HCALL_ERR : 0;
 }
 
+static int kvm_xen_set_gnttab(CPUState *cs)
+{
+    X86CPU *cpu = X86_CPU(cs);
+    XenState *xen = cs->xen_state;
+    unsigned int max = cpu->xen_gnttab_max_frames;
+    XenGrantTable *gnttab = &xen->gnttab;
+    struct kvm_xen_hvm_attr xhsi;
+    struct kvm_xen_gnttab *xhgt = &xhsi.u.gnttab;
+    void *addr, *initial;
+    int err;
+
+    if (gnttab->max_nr_frames > 0) {
+        return 0;
+    }
+
+    addr = g_malloc(sizeof(addr) * max);
+    if (!addr) {
+        return -ENOMEM;
+    }
+
+    initial = qemu_memalign(TARGET_PAGE_SIZE, TARGET_PAGE_SIZE);
+    if (!initial) {
+        g_free(addr);
+        return -ENOMEM;
+    }
+
+    xhsi.type = KVM_XEN_ATTR_TYPE_GNTTAB;
+    xhgt->flags = KVM_XEN_GNTTAB_F_INIT;
+    xhgt->init.max_frames = max;
+    xhgt->init.max_maptrack_frames = max;
+    xhgt->init.initial_frame = (__u64) initial;
+
+    err = kvm_vm_ioctl(cs->kvm_state, KVM_XEN_HVM_SET_ATTR, &xhsi);
+    if (err) {
+        g_free(addr);
+        qemu_vfree(initial);
+        return -EFAULT;
+    }
+
+    gnttab->nr_frames = 0;
+    gnttab->max_nr_frames = cpu->xen_gnttab_max_frames;
+    gnttab->frames = addr;
+    gnttab->frames[0] = initial;
+    return 0;
+}
+
+static int kvm_xen_hcall_gnttab_op(struct kvm_xen_exit *exit, X86CPU *cpu,
+                                   int cmd, uint64_t arg, int count)
+{
+    CPUState *cs = CPU(cpu);
+    int err = -ENOSYS;
+
+    switch (cmd) {
+    case GNTTABOP_set_version: {
+        struct gnttab_set_version *gsv;
+
+        gsv = gva_to_hva(cs, arg);
+        if (!gsv) {
+            err = -EFAULT;
+            break;
+        }
+
+        if (!gsv->version ||
+            gsv->version > cpu->xen_gnttab_max_version) {
+            err = -ENOTSUP;
+            break;
+        }
+
+        err = 0;
+        break;
+    }
+    }
+
+    exit->u.hcall.result = err;
+    return err ? HCALL_ERR : 0;
+}
+
 static int __kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit)
 {
     uint16_t code = exit->u.hcall.input;
@@ -858,6 +967,10 @@ static int __kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit)
     case HVMOP_set_evtchn_upcall_vector:
         return kvm_xen_hcall_evtchn_upcall_vector(exit, cpu,
                                                   exit->u.hcall.params[0]);
+    case __HYPERVISOR_grant_table_op:
+        return kvm_xen_hcall_gnttab_op(exit, cpu, exit->u.hcall.params[0],
+                                       exit->u.hcall.params[1],
+                                       exit->u.hcall.params[2]);
     case __HYPERVISOR_sched_op_compat:
     case __HYPERVISOR_sched_op:
         return kvm_xen_hcall_sched_op(exit, cpu, exit->u.hcall.params[0],
@@ -912,6 +1025,7 @@ int kvm_xen_vcpu_init(CPUState *cs)
         return -ENOTSUP;
 
     kvm_xen_set_hypercall_page(cs);
+    kvm_xen_set_gnttab(cs);
     return 0;
 }
 

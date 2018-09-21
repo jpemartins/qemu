@@ -5813,6 +5813,10 @@ static Property x86_cpu_properties[] = {
     DEFINE_PROP_BOOL("xen-pvclock", X86CPU, xen_pvclock, true),
     DEFINE_PROP_UINT32("xen-major-version", X86CPU, xen_major_version, 3),
     DEFINE_PROP_UINT32("xen-minor-version", X86CPU, xen_minor_version, 2),
+    DEFINE_PROP_UINT32("xen-gnttab-max-frames", X86CPU,
+                       xen_gnttab_max_frames, GNTTAB_MAX_FRAMES),
+    DEFINE_PROP_UINT32("xen-gnttab-max-version", X86CPU,
+                       xen_gnttab_max_version, 1),
 
     /*
      * From "Requirements for Implementing the Microsoft

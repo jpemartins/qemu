@@ -11,6 +11,18 @@
 #ifndef TARGET_I386_XEN_PROTO_H
 #define TARGET_I386_XEN_PROTO_H
 
+typedef struct XenGrantTable {
+    unsigned int version;
+    unsigned int nr_frames;
+
+#define GNTTAB_MAX_FRAMES 64
+    unsigned int max_nr_frames;
+    union {
+        void **frames;
+        struct grant_entry_v1 **frames_v1;
+    };
+} XenGrantTable;
+
 typedef struct XenCallbackVector {
     int via;
     int vector;
@@ -42,6 +54,7 @@ typedef struct XenState {
     int domid;
     int port;
     QemuMutex port_lock;
+    struct XenGrantTable gnttab;
 } XenState;
 
 typedef struct XenCPUState {

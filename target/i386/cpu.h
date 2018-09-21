@@ -1491,6 +1491,8 @@ struct X86CPU {
     bool xen_pvclock;
     uint32_t xen_major_version;
     uint32_t xen_minor_version;
+    uint32_t xen_gnttab_max_frames;
+    uint32_t xen_gnttab_max_version;
 };
 
 static inline X86CPU *x86_env_get_cpu(CPUX86State *env)

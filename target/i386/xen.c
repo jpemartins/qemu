@@ -461,8 +461,50 @@ static int kvm_xen_hcall_evtchn_upcall_vector(struct kvm_xen_exit *exit,
     xcpu->cb.virq = err;
 
 out:
-    exit->u.hcall.result = err;
-    return err ? HCALL_ERR : 0;
+    return err;
+}
+
+static int handle_get_param(struct kvm_xen_exit *exit, X86CPU *cpu,
+                            uint64_t arg)
+{
+    CPUState *cs = CPU(cpu);
+    XenState *xen = cs->xen_state;
+    struct xen_hvm_param *hp;
+    int err;
+
+    hp = gva_to_hva(cs, arg);
+    if (!hp) {
+        err = -EFAULT;
+        goto out;
+    }
+
+    if (hp->domid != DOMID_SELF) {
+        err = -EINVAL;
+        goto out;
+    }
+
+    err = 0;
+    switch (hp->index) {
+    case HVM_PARAM_STORE_PFN:
+        if (X86_CPU(cs)->xen_xenbus) {
+            hp->value = xen->xenstore_pfn;
+        } else {
+            err = -ENOSYS;
+        }
+        break;
+    case HVM_PARAM_STORE_EVTCHN:
+        if (X86_CPU(cs)->xen_xenbus) {
+            hp->value = xen->xenstore_port;
+        } else {
+            err = -ENOSYS;
+        }
+        break;
+    default:
+        err = -ENOSYS;
+        break;
+    }
+out:
+    return err;
 }
 
 static int kvm_xen_hcall_hvm_op(struct kvm_xen_exit *exit, X86CPU *cpu,
@@ -476,6 +518,10 @@ static int kvm_xen_hcall_hvm_op(struct kvm_xen_exit *exit, X86CPU *cpu,
         }
     case HVMOP_set_param: {
             ret = handle_set_param(exit, cpu, arg);
+            break;
+        }
+    case HVMOP_get_param: {
+            ret = handle_get_param(exit, cpu, arg);
             break;
         }
     }

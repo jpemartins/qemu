@@ -21,6 +21,7 @@
 #include "sysemu/sysemu.h"
 #include "monitor/monitor.h"
 #include "qapi/qmp/qdict.h"
+#include "qapi/error.h"
 #include "qom/cpu.h"
 #include "hw/xen/xen.h"
 
@@ -140,12 +141,19 @@ int kvm_xen_set_hypercall_page(CPUState *env)
     return kvm_vm_ioctl(env->kvm_state, KVM_XEN_HVM_CONFIG, &cfg);
 }
 
+static void kvm_xen_exit(Notifier *n, void *data)
+{
+}
+
 void kvm_xen_init(XenState *xen)
 {
     kvm_xen_set_domid(kvm_state, xen);
 
     qemu_mutex_init(&xen_global_mutex);
     qemu_mutex_init(&xen->port_lock);
+
+    xen->exit.notify = kvm_xen_exit;
+    qemu_add_exit_notifier(&xen->exit);
 
     kvm_xen_evtchn_init(xen);
 }

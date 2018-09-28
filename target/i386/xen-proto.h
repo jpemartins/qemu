@@ -54,6 +54,7 @@ typedef struct XenState {
     int domid;
     int port;
     QemuMutex port_lock;
+    Notifier exit;
     struct XenGrantTable gnttab;
 } XenState;
 

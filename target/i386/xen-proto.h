@@ -55,6 +55,10 @@ typedef struct XenState {
     int port;
     QemuMutex port_lock;
     Notifier exit;
+    struct xs_handle *xenstore;
+    MemoryRegion mr;
+    int xenstore_pfn;
+    int xenstore_port;
     struct XenGrantTable gnttab;
 } XenState;
 

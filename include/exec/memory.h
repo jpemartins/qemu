@@ -834,8 +834,9 @@ void memory_region_init_iommu(void *_iommu_mr,
                               uint64_t size);
 
 /**
- * memory_region_init_ram - Initialize RAM memory region.  Accesses into the
- *                          region will modify memory directly.
+ * memory_region_init_ram, memory_region_init_ram_shared
+ * Initialize RAM memory region.  Accesses into the
+ * region will modify memory directly.
  *
  * @mr: the #MemoryRegion to be initialized
  * @owner: the object that tracks the region's reference count (must be
@@ -848,6 +849,7 @@ void memory_region_init_iommu(void *_iommu_mr,
  * arranges for it to be migrated (by calling vmstate_register_ram()
  * if @owner is a DeviceState, or vmstate_register_ram_global() if
  * @owner is NULL).
+ * The _shared verson allocates a shareable mmap-region.
  *
  * TODO: Currently we restrict @owner to being either NULL (for
  * global RAM regions with no owner) or devices, so that we can
@@ -861,6 +863,11 @@ void memory_region_init_ram(MemoryRegion *mr,
                             uint64_t size,
                             Error **errp);
 
+void memory_region_init_ram_shared(MemoryRegion *mr,
+                            struct Object *owner,
+                            const char *name,
+                            uint64_t size,
+                            Error **errp);
 /**
  * memory_region_init_rom: Initialize a ROM memory region.
  *

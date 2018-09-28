@@ -1493,6 +1493,7 @@ struct X86CPU {
     uint32_t xen_minor_version;
     uint32_t xen_gnttab_max_frames;
     uint32_t xen_gnttab_max_version;
+    bool xen_xenbus;
 };
 
 static inline X86CPU *x86_env_get_cpu(CPUX86State *env)

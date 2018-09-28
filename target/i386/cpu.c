@@ -5817,6 +5817,7 @@ static Property x86_cpu_properties[] = {
                        xen_gnttab_max_frames, GNTTAB_MAX_FRAMES),
     DEFINE_PROP_UINT32("xen-gnttab-max-version", X86CPU,
                        xen_gnttab_max_version, 1),
+    DEFINE_PROP_BOOL("xen-xenbus", X86CPU, xen_xenbus, true),
 
     /*
      * From "Requirements for Implementing the Microsoft

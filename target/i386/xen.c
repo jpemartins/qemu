@@ -12,6 +12,7 @@
 #include "qemu/main-loop.h"
 #include "qemu/log.h"
 #include "qemu/error-report.h"
+#include "qemu/cutils.h"
 #include "linux/kvm.h"
 #include "exec/address-spaces.h"
 #include "cpu.h"
@@ -37,8 +38,20 @@
 #include "standard-headers/xen/event_channel.h"
 #include "standard-headers/xen/grant_table.h"
 
+#include <xenstore.h>
+
 #define PAGE_OFFSET    0xffffffff80000000UL
 #define PAGE_SHIFT     12
+
+/* Import from libxencontrol */
+#define X86_HVM_END_SPECIAL_REGION  0xff000U
+#define X86_HVM_NR_SPECIAL_PAGES    8i
+
+#define SPECIALPAGE_XENSTORE 0
+#define SPECIALPAGE_CONSOLE  1
+
+#define xen_special_pfn(x) \
+     (X86_HVM_END_SPECIAL_REGION - X86_HVM_NR_SPECIAL_PAGES + (x))
 
 /*
  * Unhandled hypercalls error:
@@ -51,6 +64,7 @@
 #endif
 
 static QemuMutex xen_global_mutex;
+static int xs_domid;
 
 static void *gpa_to_hva(uint64_t gpa)
 {
@@ -143,6 +157,14 @@ int kvm_xen_set_hypercall_page(CPUState *env)
 
 static void kvm_xen_exit(Notifier *n, void *data)
 {
+    XenState *xen = container_of(n, XenState, exit);
+    struct xs_handle *xsh = xen->xenstore;
+
+    if (xsh) {
+        xs_release_domain(xsh, xen->domid);
+        xs_rm(xsh, XBT_NULL, xs_get_domain_path(xsh, xen->domid));
+        xs_close(xsh);
+    }
 }
 
 void kvm_xen_init(XenState *xen)
@@ -1094,14 +1116,172 @@ int kvm_xen_handle_exit(X86CPU *cpu, struct kvm_xen_exit *exit)
     }
 }
 
+static int kvm_xen_connect_xenstore(CPUState *cs)
+{
+    XenState *xen = cs->xen_state;
+    struct xs_handle *xsh;
+    unsigned int len = 0;
+    char *str;
+    long int res;
+
+    if (!X86_CPU(cs)->xen_xenbus) {
+        return -EINVAL;
+    }
+
+    xsh = xs_open(XS_OPEN_SOCKETONLY);
+    if (!xsh) {
+        error_report("Cannot connect to xenstore");
+        return -ENOENT;
+    }
+
+    str = xs_read(xsh, XBT_NULL, "/tool/xenstored/domid", &len);
+    if (str) {
+        if (qemu_strtol(str, NULL, 10, &res) < 0) {
+            error_report("Failed to parse xenstored domid");
+            return -EINVAL;
+        }
+        free(str);
+        if (res < 0) {
+            error_report("Invalid xenstored domid");
+            return -EINVAL;
+        }
+        xs_domid = res;
+    }
+
+    xen->xenstore = xsh;
+    return 0;
+}
+
+static void kvm_xen_seed_xenbus(CPUState *cs)
+{
+    struct xs_permissions frontend_perms[2];
+    XenState *xen = cs->xen_state;
+    struct xs_handle *xsh = xen->xenstore;
+    char *parent = xs_get_domain_path(xsh, xen->domid);
+    xs_transaction_t t;
+    char *path = NULL;
+    char *value = NULL;
+    int len;
+
+retry_transaction:
+    t = xs_transaction_start(xsh);
+
+    xs_mkdir(xsh, t, parent);
+
+    frontend_perms[0].id = xen->domid;
+    frontend_perms[0].perms = XS_PERM_NONE;
+    frontend_perms[1].id = xs_domid;
+    frontend_perms[1].perms = XS_PERM_READ;
+    xs_set_permissions(xsh, t, parent, frontend_perms, 2);
+
+    if (asprintf(&path, "%s/domid", parent) > 0 &&
+        (len = asprintf(&value, "%d", xen->domid)) > 0) {
+        xs_write(xsh, t, path, value, len);
+        free(value);
+        value = NULL;
+        free(path);
+        path = NULL;
+    }
+
+    if (asprintf(&path, "%s/store/port", parent) > 0 &&
+        (len = asprintf(&value, "%d", xen->xenstore_port)) > 0) {
+        xs_write(xsh, t, path, value, len);
+        free(value);
+        value = NULL;
+        free(path);
+        path = NULL;
+    }
+    if (asprintf(&path, "%s/store/ring-ref", parent) &&
+        (len = asprintf(&value, "%d", xen->xenstore_pfn)) > 0) {
+        xs_write(xsh, t, path, value, len);
+        free(value);
+        value = NULL;
+    }
+
+    if (!xs_transaction_end(xsh, t, 0)) {
+        if (errno == EAGAIN) {
+            goto retry_transaction;
+        }
+    }
+}
+
+static void kvm_xen_set_xenbus(CPUState *cs)
+{
+    unsigned long pfn;
+    XenState *xen = cs->xen_state;
+    XenGrantTable *gnttab = &xen->gnttab;
+    struct evtchn_alloc_unbound alloc = {
+        .dom = DOMID_SELF, .remote_dom = xs_domid,
+    };
+
+    if (kvm_xen_evtchn_alloc_unbound(X86_CPU(cs), &alloc)) {
+        error_report("failed to set xenstored port");
+        return;
+    }
+
+    pfn = xen_special_pfn(SPECIALPAGE_XENSTORE);
+    memory_region_init_ram_shared(&xen->mr, NULL, "xenbus",
+                                  TARGET_PAGE_SIZE, &error_fatal);
+    memory_region_add_subregion(get_system_memory(), pfn << PAGE_SHIFT,
+                                &xen->mr);
+    memset(memory_region_get_ram_ptr(&xen->mr), 0, TARGET_PAGE_SIZE);
+
+    xen->xenstore_pfn = pfn;
+    xen->xenstore_port = alloc.port;
+
+    gnttab->frames_v1[0][GNTTAB_RESERVED_XENSTORE].flags = GTF_permit_access;
+    gnttab->frames_v1[0][GNTTAB_RESERVED_XENSTORE].domid = xs_domid;
+    gnttab->frames_v1[0][GNTTAB_RESERVED_XENSTORE].frame = xen->xenstore_pfn;
+}
+
+static int kvm_xen_introduce_domain(CPUState *cs)
+{
+    XenState *xen = cs->xen_state;
+
+    if (!xen->xenstore) {
+        return -EFAULT;
+    }
+
+    if (xs_introduce_domain(xen->xenstore, xen->domid,
+                            xen->xenstore_pfn, xen->xenstore_port)) {
+        return 0;
+    }
+
+    return -EFAULT;
+}
+
 int kvm_xen_vcpu_init(CPUState *cs)
 {
+    if (cs->cpu_index != 0) {
+        return 0;
+    }
+
     if (!kvm_check_extension(cs->kvm_state, KVM_CAP_XEN_HVM) ||
-        !kvm_check_extension(cs->kvm_state, KVM_CAP_XEN_HVM_GUEST))
+        !kvm_check_extension(cs->kvm_state, KVM_CAP_XEN_HVM_GUEST)) {
         return -ENOTSUP;
+    }
 
     kvm_xen_set_hypercall_page(cs);
-    kvm_xen_set_gnttab(cs);
+
+    if (kvm_xen_set_gnttab(cs) < 0) {
+        error_report("vcpu%d: failed to allocate grant table", cs->cpu_index);
+        return -EFAULT;
+    }
+
+    if (!kvm_xen_connect_xenstore(cs)) {
+        kvm_xen_set_xenbus(cs);
+        kvm_xen_seed_xenbus(cs);
+    } else if (!X86_CPU(cs)->xen_xenbus) {
+        return 0;
+    } else {
+        return -ENOENT;
+    }
+
+    if (kvm_xen_introduce_domain(cs) < 0) {
+        error_report("vcpu%d: failed to introduce domain", cs->cpu_index);
+        return -EFAULT;
+    }
+
     return 0;
 }
 

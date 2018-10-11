@@ -140,8 +140,9 @@ static void del_nic_peer(NICState *nic, void *opaque)
     NetClientState *nc;
 
     nc = qemu_get_queue(nic);
-    if (nc->peer)
+    if (strcmp(nc->model, "xen-nic") && nc->peer) {
         qemu_del_net_client(nc->peer);
+    }
 }
 
 static void pci_unplug_nics(PCIBus *bus)

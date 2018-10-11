@@ -309,24 +309,28 @@ static struct XenLegacyDevice *xen_be_get_xendev(const char *type, int dom,
                                                  struct XenDevOps *ops)
 {
     struct XenLegacyDevice *xendev;
+    bool new;
 
     xendev = xen_pv_find_xendev(type, dom, dev);
-    if (xendev) {
+    if (xendev && xendev->ops) {
         return xendev;
     }
 
+    new = !xendev;
     /* init new xendev */
-    xendev = g_malloc0(ops->size);
-    object_initialize(&xendev->qdev, ops->size, TYPE_XENBACKEND);
-    OBJECT(xendev)->free = g_free;
-    qdev_set_parent_bus(DEVICE(xendev), xen_sysbus);
-    qdev_set_id(DEVICE(xendev), g_strdup_printf("xen-%s-%d", type, dev));
-    qdev_init_nofail(DEVICE(xendev));
-    object_unref(OBJECT(xendev));
+    if (!xendev) {
+        xendev = g_malloc0(ops->size);
+        object_initialize(&xendev->qdev, ops->size, TYPE_XENBACKEND);
+        OBJECT(xendev)->free = g_free;
+        qdev_set_parent_bus(DEVICE(xendev), xen_sysbus);
+        qdev_set_id(DEVICE(xendev), g_strdup_printf("xen-%s-%d", type, dev));
+        qdev_init_nofail(DEVICE(xendev));
+        object_unref(OBJECT(xendev));
+        xendev->type  = type;
+        xendev->dom   = dom;
+        xendev->dev   = dev;
+    }
 
-    xendev->type  = type;
-    xendev->dom   = dom;
-    xendev->dev   = dev;
     xendev->ops   = ops;
 
     snprintf(xendev->be, sizeof(xendev->be), "backend/%s/%d/%d",
@@ -347,7 +351,8 @@ static struct XenLegacyDevice *xen_be_get_xendev(const char *type, int dom,
         qemu_set_cloexec(xenevtchn_fd(xendev->evtchndev));
     }
 
-    xen_pv_insert_xendev(xendev);
+    if (new)
+        xen_pv_insert_xendev(xendev);
 
     if (xendev->ops->alloc) {
         xendev->ops->alloc(xendev);
@@ -813,6 +818,7 @@ void xen_be_register_common(void)
 
     xen_be_register("console", &xen_console_ops);
     xen_be_register("vkbd", &xen_kbdmouse_ops);
+    xen_be_register("qnic", &xen_netdev_ops);
 #ifdef CONFIG_VIRTFS
     xen_be_register("9pfs", &xen_9pfs_ops);
 #endif

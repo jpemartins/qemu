@@ -20,6 +20,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
@@ -29,8 +30,13 @@
 #include "net/checksum.h"
 #include "net/util.h"
 #include "hw/xen/xen-legacy-backend.h"
+#include "net/tap.h"
 
 #include <xen/io/netif.h>
+
+#define TYPE_XEN_NIC "xen-nic"
+#define XEN_NIC(obj) \
+    OBJECT_CHECK(struct XenNetDev, (obj), TYPE_XEN_NIC)
 
 /* ------------------------------------------------------------- */
 
@@ -44,6 +50,7 @@ struct XenNetDev {
     struct netif_rx_sring *rxs;
     netif_tx_back_ring_t  tx_ring;
     netif_rx_back_ring_t  rx_ring;
+    XenBackendType        be;
     NICConf               conf;
     NICState              *nic;
 };
@@ -294,12 +301,12 @@ static int net_init(struct XenLegacyDevice *xendev)
         return -1;
     }
 
-    netdev->nic = qemu_new_nic(&net_xen_info, &netdev->conf,
-                               "xen", NULL, netdev);
-
-    snprintf(qemu_get_queue(netdev->nic)->info_str,
-             sizeof(qemu_get_queue(netdev->nic)->info_str),
-             "nic: xenbus vif macaddr=%s", netdev->mac);
+    if (!netdev->nic) {
+        netdev->nic = qemu_new_nic(&net_xen_info, &netdev->conf,
+                                   "xen", NULL, netdev);
+        qemu_format_nic_info_str(qemu_get_queue(netdev->nic),
+                                 netdev->conf.macaddr.a);
+    }
 
     /* fill info */
     xenstore_write_be_int(&netdev->xendev, "feature-rx-copy", 1);
@@ -410,3 +417,70 @@ struct XenDevOps xen_netdev_ops = {
     .disconnect = net_disconnect,
     .free       = net_free,
 };
+
+static Property xen_nic_properties[] = {
+    DEFINE_XEN_PROPERTIES(struct XenNetDev, be),
+    DEFINE_NIC_PROPERTIES(struct XenNetDev, conf),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
+static void xen_nic_instance_init(Object *obj)
+{
+    struct XenNetDev *n = XEN_NIC(obj);
+
+    device_add_bootindex_property(obj, &n->conf.bootindex,
+                                  "bootindex", "/ethernet-phy@0",
+                                  DEVICE(n), NULL);
+}
+
+static void xen_nic_device_realize(DeviceState *dev, Error **errp)
+{
+    struct XenNetDev *n = XEN_NIC(dev);
+
+    qemu_macaddr_default_if_unset(&n->conf.macaddr);
+
+    n->nic = qemu_new_nic(&net_xen_info, &n->conf,
+                          object_get_typename(OBJECT(dev)), dev->id, n);
+    qemu_format_nic_info_str(qemu_get_queue(n->nic), n->conf.macaddr.a);
+
+    n->xendev.type = n->be.type;
+    n->xendev.dom = xen_domid;
+    n->xendev.dev = 0;
+
+    xen_pv_insert_xendev(&n->xendev);
+
+    xen_config_dev_nic_by_conf(qemu_get_queue(n->nic), n->conf.macaddr, &n->be);
+}
+
+static void xen_nic_device_unrealize(DeviceState *dev, Error **errp)
+{
+}
+
+static void xen_nic_class_init(ObjectClass *klass, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->realize = xen_nic_device_realize;
+    dc->unrealize = xen_nic_device_unrealize;
+    dc->props = xen_nic_properties;
+    set_bit(DEVICE_CATEGORY_NETWORK, dc->categories);
+
+    if (xen_mode == XEN_EMULATE) {
+        xen_netdev_ops.flags &= ~DEVOPS_FLAG_NEED_GNTDEV;
+    }
+}
+
+static const TypeInfo xen_nic_info = {
+    .name = TYPE_XEN_NIC,
+    .parent = TYPE_XENBACKEND,
+    .instance_size = sizeof(struct XenNetDev),
+    .instance_init = xen_nic_instance_init,
+    .class_init = xen_nic_class_init,
+};
+
+static void xen_nic_register_types(void)
+{
+    type_register_static(&xen_nic_info);
+}
+
+type_init(xen_nic_register_types)

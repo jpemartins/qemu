@@ -360,6 +360,8 @@ static void kvm_xen_exit(Notifier *n, void *data)
         xs_rm(xsh, XBT_NULL, xs_get_domain_path(xsh, xen->domid));
         xs_close(xsh);
     }
+
+    xen_config_cleanup();
 }
 
 void kvm_xen_init(XenState *xen)

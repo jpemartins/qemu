@@ -11,6 +11,8 @@
 #ifndef TARGET_I386_XEN_PROTO_H
 #define TARGET_I386_XEN_PROTO_H
 
+#include "hw/xen/xen-legacy-backend.h"
+
 typedef struct XenGrantTable {
     unsigned int version;
     unsigned int nr_frames;

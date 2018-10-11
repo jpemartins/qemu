@@ -297,13 +297,15 @@ static struct XenLegacyDevice *xen_be_get_xendev(const char *type, int dom,
     xendev->debug      = debug;
     xendev->local_port = -1;
 
-    xendev->evtchndev = xenevtchn_open(NULL, 0);
-    if (xendev->evtchndev == NULL) {
-        xen_pv_printf(NULL, 0, "can't open evtchn device\n");
-        qdev_unplug(DEVICE(xendev), NULL);
-        return NULL;
+    if (xen_mode != XEN_EMULATE) {
+        xendev->evtchndev = xenevtchn_open(NULL, 0);
+        if (xendev->evtchndev == NULL) {
+            xen_pv_printf(NULL, 0, "can't open evtchn device\n");
+            qdev_unplug(DEVICE(xendev), NULL);
+            return NULL;
+        }
+        qemu_set_cloexec(xenevtchn_fd(xendev->evtchndev));
     }
-    qemu_set_cloexec(xenevtchn_fd(xendev->evtchndev));
 
     xen_pv_insert_xendev(xendev);
 

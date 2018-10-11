@@ -44,6 +44,7 @@
 #include "sysemu/arch_init.h"
 #include "hw/i2c/smbus.h"
 #include "hw/xen/xen.h"
+#include "hw/xen/xen-legacy-backend.h"
 #include "exec/memory.h"
 #include "exec/address-spaces.h"
 #include "hw/acpi/acpi.h"
@@ -147,6 +148,10 @@ static void pc_init1(MachineState *machine,
         } else {
             pcms->above_4g_mem_size = 0;
             pcms->below_4g_mem_size = machine->ram_size;
+        }
+
+        if (!xen_enabled() && !xen_be_xenstore_open()) {
+            kvm_xen_machine_init();
         }
     }
 

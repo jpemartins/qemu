@@ -16,6 +16,7 @@
 #include "linux/kvm.h"
 #include "exec/address-spaces.h"
 #include "cpu.h"
+#include "kvm_i386.h"
 #include "xen.h"
 #include "trace.h"
 #include "xen_evtchn.h"
@@ -25,9 +26,8 @@
 #include "qapi/error.h"
 #include "qom/cpu.h"
 #include "hw/xen/xen.h"
-
-
-#define __XEN_INTERFACE_VERSION__ 0x00040400
+#include "hw/xen/xen-legacy-backend.h"
+#include "hw/xen/xen-bus.h"
 
 #include "standard-headers/xen/version.h"
 #include "standard-headers/xen/memory.h"
@@ -178,6 +178,13 @@ void kvm_xen_init(XenState *xen)
     qemu_add_exit_notifier(&xen->exit);
 
     kvm_xen_evtchn_init(xen);
+}
+
+void kvm_xen_machine_init(void)
+{
+    xen_bus_init();
+    xen_be_sysdev_init();
+    xen_be_register_common();
 }
 
 int kvm_xen_set_domid(KVMState *kvm_state, XenState *xen)

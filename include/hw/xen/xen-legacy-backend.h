@@ -25,6 +25,7 @@ extern BusState *xen_sysbus;
 extern XenEvtchnHandler *xen_legacy_handler;
 
 int xenstore_mkdir(char *path, int p);
+int xenstore_mkdir_other(char *path, int be_id, int p);
 int xenstore_write_be_str(struct XenLegacyDevice *xendev, const char *node,
                           const char *val);
 int xenstore_write_be_int(struct XenLegacyDevice *xendev, const char *node,
@@ -116,10 +117,22 @@ extern struct XenDevOps xen_netdev_ops;       /* xen_nic.c         */
 extern struct XenDevOps xen_usb_ops;          /* xen-usb.c         */
 #endif
 
+typedef struct XenBackendType {
+    char                *type;
+    uint16_t            domid;
+} XenBackendType;
+
+#define DEFINE_XEN_PROPERTIES(_state, _conf)                  \
+    DEFINE_PROP_STRING("backendtype", _state, _conf.type),    \
+    DEFINE_PROP_UINT16("backend", _state, _conf.domid, 0)
+
 /* configuration (aka xenbus setup) */
 void xen_config_cleanup(void);
 int xen_config_dev_blk(DriveInfo *disk);
+int xen_config_dev_blk_by_conf(DriveInfo *disk, XenBackendType *be);
 int xen_config_dev_nic(NICInfo *nic);
+int xen_config_dev_nic_by_conf(NetClientState *netdev, MACAddr macaddr,
+                               XenBackendType *be);
 int xen_config_dev_vfb(int vdev, const char *type);
 int xen_config_dev_vkbd(int vdev);
 int xen_config_dev_console(int vdev);

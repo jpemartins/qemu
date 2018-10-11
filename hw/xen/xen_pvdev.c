@@ -57,11 +57,12 @@ void xen_config_cleanup(void)
     }
 }
 
-int xenstore_mkdir(char *path, int p)
+int xenstore_mkdir_other(char *path, int domid, int p)
 {
     struct xs_permissions perms[2] = {
         {
-            .id    = 0, /* set owner: dom0 */
+            .id    = domid, /* set owner: dom0 */
+            .perms = XS_PERM_READ | XS_PERM_WRITE,
         }, {
             .id    = xen_domid,
             .perms = p,
@@ -79,6 +80,11 @@ int xenstore_mkdir(char *path, int p)
         return -1;
     }
     return 0;
+}
+
+int xenstore_mkdir(char *path, int p)
+{
+    return xenstore_mkdir_other(path, 0, p);
 }
 
 int xenstore_write_str(const char *base, const char *node, const char *val)

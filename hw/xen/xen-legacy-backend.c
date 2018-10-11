@@ -679,17 +679,40 @@ void xenstore_update_fe(char *watch, struct XenLegacyDevice *xendev)
 }
 /* -------------------------------------------------------------------- */
 
-int xen_be_init(void)
+int xen_be_xenstore_open(void)
 {
-    xengnttab_handle *gnttabdev;
-
     xenstore = xs_daemon_open();
     if (!xenstore) {
-        xen_pv_printf(NULL, 0, "can't connect to xenstored\n");
         return -1;
     }
 
     qemu_set_fd_handler(xs_fileno(xenstore), xenstore_update, NULL, NULL);
+    return 0;
+}
+
+void xen_be_xenstore_close(void)
+{
+    qemu_set_fd_handler(xs_fileno(xenstore), NULL, NULL, NULL);
+    xs_daemon_close(xenstore);
+    xenstore = NULL;
+}
+
+void xen_be_sysdev_init(void)
+{
+    xen_sysdev = qdev_create(NULL, TYPE_XENSYSDEV);
+    qdev_init_nofail(xen_sysdev);
+    xen_sysbus = qbus_create(TYPE_XENSYSBUS, DEVICE(xen_sysdev), "xen-sysbus");
+    qbus_set_bus_hotplug_handler(xen_sysbus, &error_abort);
+}
+
+int xen_be_init(void)
+{
+    xengnttab_handle *gnttabdev;
+
+    if (xen_be_xenstore_open()) {
+        xen_pv_printf(NULL, 0, "can't connect to xenstored\n");
+        return -1;
+    }
 
     if (xen_xc == NULL || xen_fmem == NULL) {
         /* Check if xen_init() have been called */
@@ -704,17 +727,12 @@ int xen_be_init(void)
         xengnttab_close(gnttabdev);
     }
 
-    xen_sysdev = qdev_create(NULL, TYPE_XENSYSDEV);
-    qdev_init_nofail(xen_sysdev);
-    xen_sysbus = qbus_create(TYPE_XENSYSBUS, DEVICE(xen_sysdev), "xen-sysbus");
-    qbus_set_bus_hotplug_handler(xen_sysbus, &error_abort);
+    xen_be_sysdev_init();
 
     return 0;
 
 err:
-    qemu_set_fd_handler(xs_fileno(xenstore), NULL, NULL, NULL);
-    xs_daemon_close(xenstore);
-    xenstore = NULL;
+    xen_be_xenstore_close();
 
     return -1;
 }

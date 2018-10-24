@@ -330,6 +330,11 @@ int kvm_xen_evtchn_bind_virq(X86CPU *cpu, void *arg)
 
     kvm_xen_run_on_cpu(dest, xen_vcpu_set_evtchn, evtchn);
 
+    /* We want to offload timers where possible */
+    if (evtchn->virq == VIRQ_TIMER) {
+        kvm_set_xen_event(dest->kvm_state, evtchn, NULL);
+    }
+
     out->port = evtchn->port;
 
     return 0;

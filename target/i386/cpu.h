@@ -1488,6 +1488,7 @@ struct X86CPU {
 
     bool xen;
     bool xen_vapic;
+    bool xen_pvclock;
     uint32_t xen_major_version;
     uint32_t xen_minor_version;
 };

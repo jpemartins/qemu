@@ -180,6 +180,11 @@ static int kvm_xen_hcall_xen_version(struct kvm_xen_exit *exit, X86CPU *cpu,
              */
             fi->submap = (1U << XENFEAT_auto_translated_physmap) |
                          (1U << XENFEAT_hvm_callback_vector);
+
+            if (cpu->xen_pvclock) {
+                fi->submap |= (1U << XENFEAT_hvm_safe_pvclock);
+            }
+
             break;
          }
     }

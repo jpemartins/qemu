@@ -275,6 +275,12 @@ static int kvm_clear_xen_event(KVMState *s, XenEvtChn *e)
     return __kvm_set_xen_event(s, e, NULL, KVM_XEN_EVENTFD_DEASSIGN);
 }
 
+static int kvm_update_xen_event(KVMState *s, XenEvtChn *e,
+                                         EventNotifier *n)
+{
+    return __kvm_set_xen_event(s, e, n, KVM_XEN_EVENTFD_UPDATE);
+}
+
 int kvm_xen_evtchn_bind_ipi(X86CPU *cpu, void *arg)
 {
     struct evtchn_bind_ipi *out = arg;
@@ -437,6 +443,7 @@ int kvm_xen_evtchn_bind_vcpu(X86CPU *cpu, void *arg)
     struct evtchn_bind_vcpu bind_vcpu;
     struct XenEvtChn *evtchn;
     CPUState *dest;
+    int r;
 
     memcpy(&bind_vcpu, arg, sizeof(bind_vcpu));
 
@@ -450,7 +457,16 @@ int kvm_xen_evtchn_bind_vcpu(X86CPU *cpu, void *arg)
         return -ENOENT;
     }
 
+    if (evtchn->type != XEN_EVTCHN_TYPE_UNBOUND &&
+        evtchn->type != XEN_EVTCHN_TYPE_INTERDOM)
+        return -EINVAL;
+
     evtchn->notify_vcpu_id = bind_vcpu.vcpu;
+
+    r = kvm_update_xen_event(dest->kvm_state, evtchn, NULL);
+    if (r == -ENOENT) {
+        qemu_log_mask(LOG_TRACE, "port %d not offloaded\n", bind_vcpu.port);
+    }
 
     return 0;
 }

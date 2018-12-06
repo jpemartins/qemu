@@ -26,6 +26,7 @@
 #include "qapi/error.h"
 #include "qom/cpu.h"
 #include "hw/xen/xen.h"
+#include "hw/xen/xen_pvdev.h"
 #include "hw/xen/xen-legacy-backend.h"
 #include "hw/xen/xen-bus.h"
 
@@ -237,11 +238,18 @@ static void xen_dev_copy_grant_refs(struct XenDevice *xendev,
     }
 }
 
+static void xen_dev_send_notify(struct XenDevice *xendev, int port,
+                                Error **errp)
+{
+    kvm_xen_evtchn_host_send(port);
+}
+
 static struct XenBackendOps xen_dev_ops = {
     .set_max_grefs = xen_dev_set_max_grant_refs,
     .map_grefs = xen_dev_map_grant_refs,
     .unmap_grefs = xen_dev_unmap_grant_refs,
     .copy_grefs = xen_dev_copy_grant_refs,
+    .send_notify = xen_dev_send_notify,
 };
 
 static void xen_legacy_dev_set_max_grant_refs(struct XenLegacyDevice *xendev,
@@ -304,11 +312,18 @@ static int xen_legacy_dev_copy_grant_refs(struct XenLegacyDevice *xendev,
     return 0;
 }
 
+static int xen_legacy_dev_device_notify(struct XenLegacyDevice *xendev)
+{
+   kvm_xen_evtchn_host_send(xendev->local_port);
+   return 0;
+}
+
 static struct XenLegacyBackendOps xen_legacy_dev_ops = {
     .set_max_grefs = xen_legacy_dev_set_max_grant_refs,
     .map_grefs = xen_legacy_dev_map_grant_refs,
     .unmap_grefs = xen_legacy_dev_unmap_grant_refs,
     .copy_grefs = xen_legacy_dev_copy_grant_refs,
+    .send_notify = xen_legacy_dev_device_notify,
 };
 
 int kvm_xen_set_hypercall_page(CPUState *env)
@@ -359,7 +374,11 @@ void kvm_xen_init(XenState *xen)
 
     kvm_xen_evtchn_init(xen);
 
+    /* grant and device emulation ops */
+    xen_legacy_handler = kvm_xen_evtchn_set_legacyhandler;
     xen_legacy_gnt_ops = xen_legacy_dev_ops;
+
+    xen_dev_handler = kvm_xen_evtchn_set_devhandler;
     xen_gnt_ops = xen_dev_ops;
 }
 

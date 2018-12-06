@@ -20,6 +20,8 @@
 #include "sysemu/sysemu.h"
 #include "trace.h"
 
+XenDeviceHandler *xen_dev_handler;
+
 static char *xen_device_get_backend_path(XenDevice *xendev)
 {
     XenBus *xenbus = XEN_BUS(qdev_get_parent_bus(DEVICE(xendev)));
@@ -980,6 +982,12 @@ XenEventChannel *xen_device_bind_event_channel(XenDevice *xendev,
     XenEventChannel *channel = g_new0(XenEventChannel, 1);
     xenevtchn_port_or_error_t local_port;
 
+    if ((xen_mode == XEN_EMULATE) &&
+        !xen_dev_handler(port, handler, opaque)) {
+        local_port = port;
+        goto emulate;
+    }
+
     local_port = xenevtchn_bind_interdomain(xendev->xeh,
                                             xendev->frontend_id,
                                             port);
@@ -990,6 +998,7 @@ XenEventChannel *xen_device_bind_event_channel(XenDevice *xendev,
         return NULL;
     }
 
+emulate:
     channel->local_port = local_port;
     channel->handler = handler;
     channel->opaque = opaque;
@@ -1009,6 +1018,11 @@ void xen_device_notify_event_channel(XenDevice *xendev,
         return;
     }
 
+    if ((xen_mode == XEN_EMULATE) && xen_gnt_ops.send_notify) {
+        xen_gnt_ops.send_notify(xendev, channel->local_port, errp);
+        return;
+    }
+
     if (xenevtchn_notify(xendev->xeh, channel->local_port) < 0) {
         error_setg_errno(errp, errno, "xenevtchn_notify failed");
     }
@@ -1025,7 +1039,8 @@ void xen_device_unbind_event_channel(XenDevice *xendev,
 
     notifier_remove(&channel->notifier);
 
-    if (xenevtchn_unbind(xendev->xeh, channel->local_port) < 0) {
+    if ((xen_mode != XEN_EMULATE) &&
+        xenevtchn_unbind(xendev->xeh, channel->local_port) < 0) {
         error_setg_errno(errp, errno, "xenevtchn_unbind failed");
     }
 

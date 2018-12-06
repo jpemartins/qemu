@@ -144,7 +144,11 @@ struct XenBackendOps {
     void (*copy_grefs)(struct XenDevice *xendev, bool to_domain,
                       XenDeviceGrantCopySegment segs[], unsigned int nr_segs,
                       Error **errp);
+    void (*send_notify)(struct XenDevice *xendev, int port, Error **errp);
 };
 
+typedef int XenDeviceHandler(int port, XenEventHandler cb, void *opaque);
+
 extern struct XenBackendOps xen_gnt_ops;
+extern XenDeviceHandler *xen_dev_handler;
 #endif /* HW_XEN_BUS_H */

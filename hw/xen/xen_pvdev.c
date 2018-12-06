@@ -249,7 +249,8 @@ void xen_pv_evtchn_event(void *opaque)
 
 void xen_pv_unbind_evtchn(struct XenLegacyDevice *xendev)
 {
-    if (xendev->local_port == -1) {
+    if (xendev->local_port == -1 ||
+        xen_mode == XEN_EMULATE) {
         return;
     }
     qemu_set_fd_handler(xenevtchn_fd(xendev->evtchndev), NULL, NULL, NULL);
@@ -260,7 +261,7 @@ void xen_pv_unbind_evtchn(struct XenLegacyDevice *xendev)
 
 int xen_pv_send_notify(struct XenLegacyDevice *xendev)
 {
-    return xenevtchn_notify(xendev->evtchndev, xendev->local_port);
+    return xen_legacy_gnt_ops.send_notify(xendev);
 }
 
 /* ------------------------------------------------------------- */

@@ -13,11 +13,16 @@
 #define XENBACKEND_DEVICE(obj) \
     OBJECT_CHECK(XenLegacyDevice, (obj), TYPE_XENBACKEND)
 
+typedef void XenLegacyDeviceHandler(struct XenLegacyDevice *device);
+typedef int XenEvtchnHandler(int port, XenLegacyDeviceHandler *cb,
+                             struct XenLegacyDevice *dev);
+
 /* variables */
 extern struct xs_handle *xenstore;
 extern const char *xen_protocol;
 extern DeviceState *xen_sysdev;
 extern BusState *xen_sysbus;
+extern XenEvtchnHandler *xen_legacy_handler;
 
 int xenstore_mkdir(char *path, int p);
 int xenstore_write_be_str(struct XenLegacyDevice *xendev, const char *node,
@@ -83,6 +88,8 @@ static inline void xen_be_unmap_grant_ref(struct XenLegacyDevice *xendev,
     return xen_be_unmap_grant_refs(xendev, ptr, 1);
 }
 
+int xen_send_notify(struct XenLegacyDevice *xendev);
+
 struct XenLegacyBackendOps {
     void (*set_max_grefs)(struct XenLegacyDevice *xendev, unsigned int nr_refs);
     void * (*map_grefs)(struct XenLegacyDevice *xendev, uint32_t *refs,
@@ -91,6 +98,7 @@ struct XenLegacyBackendOps {
                         unsigned int nr_refs);
     int (*copy_grefs)(struct XenLegacyDevice *xendev, bool to_domain,
                       XenGrantCopySegment segs[], unsigned int nr_segs);
+    int (*send_notify)(struct XenLegacyDevice *xendev);
 };
 
 extern struct XenLegacyBackendOps xen_legacy_gnt_ops;

@@ -26,7 +26,11 @@ int kvm_xen_evtchn_close(X86CPU *cpu, void *arg);
 int kvm_xen_evtchn_unmask(X86CPU *cpu, void *arg);
 int kvm_xen_evtchn_status(X86CPU *cpu, void *arg);
 int kvm_xen_evtchn_send(X86CPU *cpu, void *arg);
+int kvm_xen_evtchn_host_send(int port);
 int kvm_xen_evtchn_vcpu_init(X86CPU *cpu, struct vcpu_info *info);
+int kvm_xen_evtchn_set_legacyhandler(int port, XenLegacyDeviceHandler *cb,
+                                     struct XenLegacyDevice *dev);
+int kvm_xen_evtchn_set_devhandler(int port, XenEventHandler cb, void *opaque);
 
 void evtchn_2l_set_pending(X86CPU *cpu, XenEvtChn *evtchn);
 

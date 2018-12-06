@@ -11,6 +11,7 @@
 #ifndef TARGET_I386_XEN_PROTO_H
 #define TARGET_I386_XEN_PROTO_H
 
+#include "hw/xen/xen-bus.h"
 #include "hw/xen/xen-legacy-backend.h"
 
 typedef struct XenGrantTable {
@@ -46,6 +47,16 @@ typedef struct XenEvtChn {
 #define XEN_EVTCHN_STATE_INUSE    1
 #define XEN_EVTCHN_STATE_UNBOUND  2
   int state;
+
+  bool is_legacy;
+  union {
+      XenLegacyDeviceHandler *legacy_handler;
+      XenEventHandler handler;
+  } callback;
+  union {
+      struct XenLegacyDevice *dev;
+      void *opaque;
+  } callback_arg;
 } XenEvtChn;
 
 typedef struct XenState {

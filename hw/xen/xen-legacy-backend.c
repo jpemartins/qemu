@@ -42,6 +42,7 @@ BusState *xen_sysbus;
 /* ------------------------------------------------------------- */
 
 /* public */
+XenEvtchnHandler *xen_legacy_handler;
 struct xs_handle *xenstore;
 const char *xen_protocol;
 
@@ -261,11 +262,17 @@ static int xen_copy_grant_refs(struct XenLegacyDevice *xendev,
     return rc;
 }
 
+int xen_send_notify(struct XenLegacyDevice *xendev)
+{
+    return xenevtchn_notify(xendev->evtchndev, xendev->local_port);
+}
+
 struct XenLegacyBackendOps xen_legacy_gnt_ops = {
     .set_max_grefs = xen_set_max_grant_refs,
     .map_grefs = xen_map_grant_refs,
     .unmap_grefs = xen_unmap_grant_refs,
     .copy_grefs = xen_copy_grant_refs,
+    .send_notify = xen_send_notify,
 };
 
 void xen_be_set_max_grant_refs(struct XenLegacyDevice *xendev,
@@ -819,6 +826,13 @@ int xen_be_bind_evtchn(struct XenLegacyDevice *xendev)
     if (xendev->local_port != -1) {
         return 0;
     }
+
+    if ((xen_mode == XEN_EMULATE) &&
+        !xen_legacy_handler(xendev->remote_port, xendev->ops->event, xendev)) {
+        xendev->local_port = xendev->remote_port;
+        return 0;
+    }
+
     xendev->local_port = xenevtchn_bind_interdomain
         (xendev->evtchndev, xendev->dom, xendev->remote_port);
     if (xendev->local_port == -1) {

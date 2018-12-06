@@ -281,6 +281,53 @@ static int kvm_update_xen_event(KVMState *s, XenEvtChn *e,
     return __kvm_set_xen_event(s, e, n, KVM_XEN_EVENTFD_UPDATE);
 }
 
+int kvm_xen_evtchn_set_legacyhandler(int port, XenLegacyDeviceHandler *cb,
+                                     struct XenLegacyDevice *dev)
+{
+    struct XenEvtChn *evtchn;
+    CPUState *cpu;
+
+    evtchn = evtchn_from_port(port);
+    if (!evtchn) {
+        return -ENOENT;
+    }
+
+    cpu = qemu_get_cpu(evtchn->notify_vcpu_id);
+    if (!cpu) {
+        return -EINVAL;
+    }
+
+    kvm_clear_xen_event(cpu->kvm_state, evtchn);
+    evtchn->callback.legacy_handler = cb;
+    evtchn->callback_arg.dev = dev;
+    evtchn->is_legacy = true;
+
+    return 0;
+}
+
+int kvm_xen_evtchn_set_devhandler(int port, XenEventHandler cb, void *opaque)
+{
+    struct XenEvtChn *evtchn;
+    CPUState *cpu;
+
+    evtchn = evtchn_from_port(port);
+    if (!evtchn) {
+        return -ENOENT;
+    }
+
+    cpu = qemu_get_cpu(evtchn->notify_vcpu_id);
+    if (!cpu) {
+        return -EINVAL;
+    }
+
+    kvm_clear_xen_event(cpu->kvm_state, evtchn);
+    evtchn->callback.handler = cb;
+    evtchn->callback_arg.opaque = opaque;
+    evtchn->is_legacy = false;
+
+    return 0;
+}
+
 int kvm_xen_evtchn_bind_ipi(X86CPU *cpu, void *arg)
 {
     struct evtchn_bind_ipi *out = arg;
@@ -564,11 +611,38 @@ int kvm_xen_evtchn_send(X86CPU *cpu, void *arg)
         return -EINVAL;
     }
 
-    evtchn_2l_set_pending(X86_CPU(dest), evtchn);
+    if (!evtchn->callback.handler) {
+        evtchn_2l_set_pending(X86_CPU(dest), evtchn);
+    } else if (evtchn->is_legacy) {
+        evtchn->callback.legacy_handler(evtchn->callback_arg.dev);
+    } else {
+        evtchn->callback.handler(evtchn->callback_arg.opaque);
+    }
 
     trace_kvm_xen_evtchn_send(CPU(cpu)->cpu_index, evtchn->notify_vcpu_id,
                               send.port);
 
+    return 0;
+}
+
+int kvm_xen_evtchn_host_send(int port)
+{
+    struct XenEvtChn *evtchn;
+    CPUState *dest;
+
+    evtchn = evtchn_from_port(port);
+    if (!evtchn) {
+        return -ENOENT;
+    }
+
+    dest = qemu_get_cpu(evtchn->notify_vcpu_id);
+    if (!dest) {
+        return -EINVAL;
+    }
+
+    evtchn_2l_set_pending(X86_CPU(dest), evtchn);
+
+    trace_kvm_xen_evtchn_send(-1, evtchn->notify_vcpu_id, port);
     return 0;
 }
 

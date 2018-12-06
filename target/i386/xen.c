@@ -53,6 +53,10 @@
 #define xen_special_pfn(x) \
      (X86_HVM_END_SPECIAL_REGION - X86_HVM_NR_SPECIAL_PAGES + (x))
 
+/* Grant v1 references per 4K page */
+#define GPP_V1 (TARGET_PAGE_SIZE / sizeof(struct grant_entry_v1))
+#define shared_entry(gt, ref)  (&((gt)[(ref) / GPP_V1][(ref) % GPP_V1]))
+
 /*
  * Unhandled hypercalls error:
  *
@@ -131,6 +135,182 @@ static void arch_init_hypercall_page(CPUState *cs, void *addr)
     }
 }
 
+static void *gref_to_gnt(uint32_t ref)
+{
+    CPUState *cs = qemu_get_cpu(0);
+    XenState *xen = cs ? cs->xen_state : NULL;
+    XenGrantTable *gnttab = xen ? &xen->gnttab : NULL;
+    struct grant_entry_v1 *gnt = NULL;
+
+    if (!gnttab) {
+        return NULL;
+    }
+
+    gnt = shared_entry(gnttab->frames_v1, ref);
+    return gnt;
+}
+
+static void *gref_to_hva(uint32_t ref)
+{
+    struct grant_entry_v1 *gnt = gref_to_gnt(ref);
+    void *addr = gnt ? gpa_to_hva((hwaddr)gnt->frame << PAGE_SHIFT) : NULL;
+    return addr;
+}
+
+static void kvm_xen_set_max_grant_refs(unsigned int nr_refs)
+{
+}
+
+static void *kvm_xen_map_grant_refs(uint32_t *refs, unsigned int nr_refs,
+                                          int prot)
+{
+    struct grant_entry_v1 *gnt = NULL;
+    void *addr;
+
+    gnt = gref_to_gnt(*refs);
+    addr = gpa_to_hva((hwaddr)gnt->frame << PAGE_SHIFT);
+
+    trace_kvm_xen_map_grant_refs(*refs, prot, nr_refs, gnt->frame, addr);
+    return addr;
+}
+
+static void kvm_xen_unmap_grant_refs(void *ptr, unsigned int nr_refs)
+{
+    trace_kvm_xen_unmap_grant_refs(ptr, nr_refs);
+}
+
+static void xen_dev_set_max_grant_refs(struct XenDevice *xendev,
+                                       unsigned int nr_refs, Error **errp)
+{
+    kvm_xen_set_max_grant_refs(nr_refs);
+}
+
+static void *xen_dev_map_grant_refs(struct XenDevice *xendev, uint32_t *refs,
+                                    unsigned int nr_refs, int prot,
+                                    Error **errp)
+{
+    return kvm_xen_map_grant_refs(refs, nr_refs, prot);
+}
+
+static void xen_dev_unmap_grant_refs(struct XenDevice *xendev, void *ptr,
+                                        unsigned int nr_refs, Error **errp)
+{
+    kvm_xen_unmap_grant_refs(ptr, nr_refs);
+}
+
+static void xen_dev_copy_grant_refs(struct XenDevice *xendev,
+                                      bool to_domain,
+                                      XenDeviceGrantCopySegment segs[],
+                                      unsigned int nr_segs, Error **errp)
+{
+    int prot = to_domain ? PROT_WRITE : PROT_READ;
+    unsigned int i;
+
+    for (i = 0; i < nr_segs; i++) {
+        XenDeviceGrantCopySegment *seg = &segs[i];
+        uint32_t ref;
+        uint16_t offset;
+        void *page, *virt;
+
+        if (to_domain) {
+            ref = seg->dest.foreign.ref;
+            offset = seg->dest.foreign.offset;
+            virt = seg->source.virt;
+        } else {
+            ref = seg->source.foreign.ref;
+            offset = seg->source.foreign.offset;
+            virt = seg->dest.virt;
+        }
+
+        page = gref_to_hva(ref);
+        if (!page) {
+            return;
+        }
+
+        if (to_domain) {
+            memcpy(page + offset, virt, seg->len);
+        } else {
+            memcpy(virt, page + offset, seg->len);
+        }
+
+        trace_kvm_xen_copy_grant_refs(xendev->name, ref, offset, virt, prot);
+    }
+}
+
+static struct XenBackendOps xen_dev_ops = {
+    .set_max_grefs = xen_dev_set_max_grant_refs,
+    .map_grefs = xen_dev_map_grant_refs,
+    .unmap_grefs = xen_dev_unmap_grant_refs,
+    .copy_grefs = xen_dev_copy_grant_refs,
+};
+
+static void xen_legacy_dev_set_max_grant_refs(struct XenLegacyDevice *xendev,
+                                       unsigned int nr_refs)
+{
+    kvm_xen_set_max_grant_refs(nr_refs);
+}
+
+static void *xen_legacy_dev_map_grant_refs(struct XenLegacyDevice *xendev,
+                                           uint32_t *refs, unsigned int nr_refs,
+                                           int prot)
+{
+    return kvm_xen_map_grant_refs(refs, nr_refs, prot);
+}
+
+static void xen_legacy_dev_unmap_grant_refs(struct XenLegacyDevice *xendev,
+                                            void *ptr, unsigned int nr_refs)
+{
+    kvm_xen_unmap_grant_refs(ptr, nr_refs);
+}
+
+static int xen_legacy_dev_copy_grant_refs(struct XenLegacyDevice *xendev,
+                                   bool to_domain,
+                                   XenGrantCopySegment segs[],
+                                   unsigned int nr_segs)
+{
+    int prot = to_domain ? PROT_WRITE : PROT_READ;
+    unsigned int i;
+
+    for (i = 0; i < nr_segs; i++) {
+        XenGrantCopySegment *seg = &segs[i];
+        uint32_t ref;
+        uint16_t offset;
+        void *page, *virt;
+
+        if (to_domain) {
+            ref = seg->dest.foreign.ref;
+            offset = seg->dest.foreign.offset;
+            virt = seg->source.virt;
+        } else {
+            ref = seg->source.foreign.ref;
+            offset = seg->source.foreign.offset;
+            virt = seg->dest.virt;
+        }
+
+        page = gref_to_hva(ref);
+        if (!page) {
+            return -EINVAL;
+        }
+
+        if (to_domain) {
+            memcpy(page + offset, virt, seg->len);
+        } else {
+            memcpy(virt, page + offset, seg->len);
+        }
+
+        trace_kvm_xen_copy_grant_refs(xendev->name, ref, offset, virt, prot);
+    }
+
+    return 0;
+}
+
+static struct XenLegacyBackendOps xen_legacy_dev_ops = {
+    .set_max_grefs = xen_legacy_dev_set_max_grant_refs,
+    .map_grefs = xen_legacy_dev_map_grant_refs,
+    .unmap_grefs = xen_legacy_dev_unmap_grant_refs,
+    .copy_grefs = xen_legacy_dev_copy_grant_refs,
+};
+
 int kvm_xen_set_hypercall_page(CPUState *env)
 {
     struct kvm_xen_hvm_config cfg;
@@ -178,6 +358,9 @@ void kvm_xen_init(XenState *xen)
     qemu_add_exit_notifier(&xen->exit);
 
     kvm_xen_evtchn_init(xen);
+
+    xen_legacy_gnt_ops = xen_legacy_dev_ops;
+    xen_gnt_ops = xen_dev_ops;
 }
 
 void kvm_xen_machine_init(void)

@@ -25,3 +25,6 @@ kvm_xen_evtchn_set(int flags, unsigned int port, int port_type) "flags 0x%x port
 kvm_xen_evtchn_send(int cpu, int dest, unsigned int port) "cpu %d notify_cpu %d port %u"
 kvm_xen_set_domid(unsigned int domid) "assigned with domid %u"
 kvm_xen_add_to_physmap(unsigned int space, unsigned int idx, uint64_t gfn) "add frame space %u idx %u gfn 0x%" PRIx64
+kvm_xen_copy_grant_refs(char *dev, uint32_t ref, uint16_t offset, void *virt, int prot) "gntcopy dev %s gnt %u:%u virt %p prot %d"
+kvm_xen_map_grant_refs(unsigned int ref, int prot, unsigned int nr_refs, uint32_t gpa, void *hva) "gntmap gnt %u prot %d nr_refs %u -> gfn 0x%x hva %p"
+kvm_xen_unmap_grant_refs(void *hva, unsigned int nr_refs) "gntunmap hva %p nr_refs %d"

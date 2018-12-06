@@ -83,6 +83,18 @@ static inline void xen_be_unmap_grant_ref(struct XenLegacyDevice *xendev,
     return xen_be_unmap_grant_refs(xendev, ptr, 1);
 }
 
+struct XenLegacyBackendOps {
+    void (*set_max_grefs)(struct XenLegacyDevice *xendev, unsigned int nr_refs);
+    void * (*map_grefs)(struct XenLegacyDevice *xendev, uint32_t *refs,
+                        unsigned int nr_refs, int prot);
+    void (*unmap_grefs)(struct XenLegacyDevice *xendev, void *ptr,
+                        unsigned int nr_refs);
+    int (*copy_grefs)(struct XenLegacyDevice *xendev, bool to_domain,
+                      XenGrantCopySegment segs[], unsigned int nr_segs);
+};
+
+extern struct XenLegacyBackendOps xen_legacy_gnt_ops;
+
 /* actual backend drivers */
 extern struct XenDevOps xen_console_ops;      /* xen_console.c     */
 extern struct XenDevOps xen_kbdmouse_ops;     /* xen_framebuffer.c */

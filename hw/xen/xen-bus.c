@@ -790,7 +790,7 @@ static void xen_device_frontend_destroy(XenDevice *xendev)
     }
 }
 
-void xen_device_set_max_grant_refs(XenDevice *xendev, unsigned int nr_refs,
+static void xen_set_max_grant_refs(XenDevice *xendev, unsigned int nr_refs,
                                    Error **errp)
 {
     if (xengnttab_set_max_grants(xendev->xgth, nr_refs)) {
@@ -798,7 +798,7 @@ void xen_device_set_max_grant_refs(XenDevice *xendev, unsigned int nr_refs,
     }
 }
 
-void *xen_device_map_grant_refs(XenDevice *xendev, uint32_t *refs,
+static void *xen_map_grant_refs(XenDevice *xendev, uint32_t *refs,
                                 unsigned int nr_refs, int prot,
                                 Error **errp)
 {
@@ -814,7 +814,7 @@ void *xen_device_map_grant_refs(XenDevice *xendev, uint32_t *refs,
     return map;
 }
 
-void xen_device_unmap_grant_refs(XenDevice *xendev, void *map,
+static void xen_unmap_grant_refs(XenDevice *xendev, void *map,
                                  unsigned int nr_refs, Error **errp)
 {
     if (xengnttab_unmap(xendev->xgth, map, nr_refs)) {
@@ -868,7 +868,7 @@ done:
     g_free(refs);
 }
 
-void xen_device_copy_grant_refs(XenDevice *xendev, bool to_domain,
+static void xen_copy_grant_refs(XenDevice *xendev, bool to_domain,
                                 XenDeviceGrantCopySegment segs[],
                                 unsigned int nr_segs, Error **errp)
 {
@@ -920,6 +920,39 @@ void xen_device_copy_grant_refs(XenDevice *xendev, bool to_domain,
 
 done:
     g_free(xengnttab_segs);
+}
+
+struct XenBackendOps xen_gnt_ops = {
+    .set_max_grefs = xen_set_max_grant_refs,
+    .map_grefs = xen_map_grant_refs,
+    .unmap_grefs = xen_unmap_grant_refs,
+    .copy_grefs = xen_copy_grant_refs,
+};
+
+void xen_device_set_max_grant_refs(XenDevice *xendev, unsigned int nr_refs,
+                                   Error **errp)
+{
+    xen_gnt_ops.set_max_grefs(xendev, nr_refs, errp);
+}
+
+void *xen_device_map_grant_refs(XenDevice *xendev, uint32_t *refs,
+                                unsigned int nr_refs, int prot,
+                                Error **errp)
+{
+    return xen_gnt_ops.map_grefs(xendev, refs, nr_refs, prot, errp);
+}
+
+void xen_device_unmap_grant_refs(XenDevice *xendev, void *map,
+                                 unsigned int nr_refs, Error **errp)
+{
+    xen_gnt_ops.unmap_grefs(xendev, map, nr_refs, errp);
+}
+
+void xen_device_copy_grant_refs(XenDevice *xendev, bool to_domain,
+                                XenDeviceGrantCopySegment segs[],
+                                unsigned int nr_segs, Error **errp)
+{
+    xen_gnt_ops.copy_grefs(xendev, to_domain, segs, nr_segs, errp);
 }
 
 struct XenEventChannel {

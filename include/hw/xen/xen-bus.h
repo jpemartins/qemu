@@ -134,4 +134,17 @@ void xen_device_unbind_event_channel(XenDevice *xendev,
                                      XenEventChannel *channel,
                                      Error **errp);
 
+struct XenBackendOps {
+    void (*set_max_grefs)(struct XenDevice *xendev, unsigned int nr_refs,
+                          Error **errp);
+    void * (*map_grefs)(struct XenDevice *xendev, uint32_t *refs,
+                        unsigned int nr_refs, int prot, Error **errp);
+    void (*unmap_grefs)(struct XenDevice *xendev, void *ptr,
+                        unsigned int nr_refs, Error **errp);
+    void (*copy_grefs)(struct XenDevice *xendev, bool to_domain,
+                      XenDeviceGrantCopySegment segs[], unsigned int nr_segs,
+                      Error **errp);
+};
+
+extern struct XenBackendOps xen_gnt_ops;
 #endif /* HW_XEN_BUS_H */

@@ -111,8 +111,8 @@ int xen_be_set_state(struct XenLegacyDevice *xendev, enum xenbus_state state)
     return 0;
 }
 
-void xen_be_set_max_grant_refs(struct XenLegacyDevice *xendev,
-                               unsigned int nr_refs)
+static void xen_set_max_grant_refs(struct XenLegacyDevice *xendev,
+                                   unsigned int nr_refs)
 {
     assert(xendev->ops->flags & DEVOPS_FLAG_NEED_GNTDEV);
 
@@ -122,8 +122,8 @@ void xen_be_set_max_grant_refs(struct XenLegacyDevice *xendev,
     }
 }
 
-void *xen_be_map_grant_refs(struct XenLegacyDevice *xendev, uint32_t *refs,
-                            unsigned int nr_refs, int prot)
+static void *xen_map_grant_refs(struct XenLegacyDevice *xendev, uint32_t *refs,
+                                unsigned int nr_refs, int prot)
 {
     void *ptr;
 
@@ -140,8 +140,8 @@ void *xen_be_map_grant_refs(struct XenLegacyDevice *xendev, uint32_t *refs,
     return ptr;
 }
 
-void xen_be_unmap_grant_refs(struct XenLegacyDevice *xendev, void *ptr,
-                             unsigned int nr_refs)
+static void xen_unmap_grant_refs(struct XenLegacyDevice *xendev, void *ptr,
+                                 unsigned int nr_refs)
 {
     assert(xendev->ops->flags & DEVOPS_FLAG_NEED_GNTDEV);
 
@@ -200,10 +200,10 @@ static int compat_copy_grant_refs(struct XenLegacyDevice *xendev,
     return 0;
 }
 
-int xen_be_copy_grant_refs(struct XenLegacyDevice *xendev,
-                           bool to_domain,
-                           XenGrantCopySegment segs[],
-                           unsigned int nr_segs)
+static int xen_copy_grant_refs(struct XenLegacyDevice *xendev,
+                               bool to_domain,
+                               XenGrantCopySegment segs[],
+                               unsigned int nr_segs)
 {
     xengnttab_grant_copy_segment_t *xengnttab_segs;
     unsigned int i;
@@ -259,6 +259,39 @@ int xen_be_copy_grant_refs(struct XenLegacyDevice *xendev,
 
     g_free(xengnttab_segs);
     return rc;
+}
+
+struct XenLegacyBackendOps xen_legacy_gnt_ops = {
+    .set_max_grefs = xen_set_max_grant_refs,
+    .map_grefs = xen_map_grant_refs,
+    .unmap_grefs = xen_unmap_grant_refs,
+    .copy_grefs = xen_copy_grant_refs,
+};
+
+void xen_be_set_max_grant_refs(struct XenLegacyDevice *xendev,
+                               unsigned int nr_refs)
+{
+    xen_legacy_gnt_ops.set_max_grefs(xendev, nr_refs);
+}
+
+void *xen_be_map_grant_refs(struct XenLegacyDevice *xendev, uint32_t *refs,
+                            unsigned int nr_refs, int prot)
+{
+    return xen_legacy_gnt_ops.map_grefs(xendev, refs, nr_refs, prot);
+}
+
+void xen_be_unmap_grant_refs(struct XenLegacyDevice *xendev, void *ptr,
+                             unsigned int nr_refs)
+{
+    xen_legacy_gnt_ops.unmap_grefs(xendev, ptr, nr_refs);
+}
+
+int xen_be_copy_grant_refs(struct XenLegacyDevice *xendev,
+                           bool to_domain,
+                           XenGrantCopySegment segs[],
+                           unsigned int nr_segs)
+{
+    return xen_legacy_gnt_ops.copy_grefs(xendev, to_domain, segs, nr_segs);
 }
 
 /*

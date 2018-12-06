@@ -251,6 +251,9 @@ static int __kvm_set_xen_event(KVMState *s, XenEvtChn *e,
 
     if (e->type == XEN_EVTCHN_TYPE_VIRQ) {
         xenevfd.virq.type = e->virq;
+    } else if (e->type == XEN_EVTCHN_TYPE_INTERDOM) {
+        xenevfd.remote.domid = e->remote_dom;
+        xenevfd.remote.port = e->remote_port;
     }
 
     xha.type = KVM_XEN_ATTR_TYPE_EVTCHN;
@@ -295,6 +298,47 @@ int kvm_xen_evtchn_bind_ipi(X86CPU *cpu, void *arg)
     kvm_set_xen_event(dest->kvm_state, evtchn, NULL);
 
     out->port = evtchn->port;
+
+    return 0;
+}
+
+int kvm_xen_evtchn_bind_interdomain(X86CPU *cpu, void *arg)
+{
+    struct evtchn_bind_interdomain *out = arg;
+    struct evtchn_bind_interdomain bind_dom;
+    struct XenEvtChn *evtchn;
+    int default_vcpu = 0;
+    CPUState *dest;
+    int r;
+
+    memcpy(&bind_dom, arg, sizeof(bind_dom));
+
+    dest = qemu_get_cpu(default_vcpu);
+    if (!dest) {
+        return -EINVAL;
+    }
+
+    evtchn = alloc_evtchn(CPU(cpu)->xen_state);
+    if (!evtchn) {
+        return -ENOMEM;
+    }
+
+    if (bind_dom.remote_dom == DOMID_SELF) {
+        bind_dom.remote_dom = dest->xen_state->domid;
+    }
+
+    evtchn->type = XEN_EVTCHN_TYPE_INTERDOM;
+    evtchn->notify_vcpu_id = 0;
+    evtchn->remote_dom = bind_dom.remote_dom;
+    evtchn->remote_port = bind_dom.remote_port;
+
+    r = kvm_set_xen_event(dest->kvm_state, evtchn, NULL);
+    if (r) {
+        evtchn->state = XEN_EVTCHN_STATE_FREE;
+        return -EINVAL;
+    }
+
+    out->local_port = evtchn->port;
 
     return 0;
 }

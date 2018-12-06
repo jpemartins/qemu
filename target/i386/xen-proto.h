@@ -19,10 +19,13 @@ typedef struct XenCallbackVector {
 
 typedef struct XenEvtChn {
   int notify_vcpu_id;
+  int remote_dom;
+  int remote_port;
   int port;
   int virq;
-#define XEN_EVTCHN_TYPE_VIRQ 0
-#define XEN_EVTCHN_TYPE_IPI  1
+#define XEN_EVTCHN_TYPE_VIRQ      0
+#define XEN_EVTCHN_TYPE_IPI       1
+#define XEN_EVTCHN_TYPE_INTERDOM  2
   int type;
 #define XEN_EVTCHN_STATE_FREE  0
 #define XEN_EVTCHN_STATE_INUSE 1

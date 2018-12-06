@@ -736,6 +736,9 @@ static int kvm_xen_hcall_evtchn_op(struct kvm_xen_exit *exit, X86CPU *cpu,
     }
 
     switch (cmd) {
+    case EVTCHNOP_bind_interdomain:
+        err = kvm_xen_evtchn_bind_interdomain(cpu, eop);
+        break;
     case EVTCHNOP_bind_ipi:
         err = kvm_xen_evtchn_bind_ipi(cpu, eop);
         break;

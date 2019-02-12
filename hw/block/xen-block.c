@@ -176,6 +176,45 @@ static const BlockDevOps xen_block_dev_ops = {
     .resize_cb = xen_block_resize_cb,
 };
 
+static int xen_block_device_configure(XenDevice *xendev, Error **errp)
+{
+    XenBlockDevice *blockdev = XEN_BLOCK_DEVICE(xendev);
+    XenBlockVdev *vdev = &blockdev->props.vdev;
+    BlockConf *conf = &blockdev->props.conf;
+    BlockDriverState *bs = blk_bs(conf->blk);
+    Error *local_err = NULL;
+    const char *filename;
+    char *dev;
+
+    if (xen_device_needs_backend(xendev)) {
+        return 0;
+    }
+
+    filename = qdict_get_try_str(bs->options, "filename");
+    if (!filename) {
+        error_setg(errp, "'%s' backend with no filename", xendev->backend);
+        return -1;
+    }
+
+    xen_device_frontend_printf(xendev, "virtual-device", "%lu",
+                               vdev->number);
+    xen_device_frontend_printf(xendev, "device-type", "%s",
+                               blockdev->device_type);
+
+    dev = object_property_get_str(OBJECT(xendev), "vdev", &local_err);
+    if (local_err) {
+        error_propagate_prepend(errp, local_err, "failed to get 'vdev': ");
+        return -1;
+    }
+
+    xen_device_backend_printf(xendev, "dev", "%s", dev);
+    xen_device_backend_printf(xendev, "type", "%s", "file");
+    xen_device_backend_printf(xendev, "params", "%s", filename);
+    xen_device_backend_printf(xendev, "mode", "%s",
+                              blockdev->info & VDISK_CDROM ? "r" : "w");
+    return 1;
+}
+
 static void xen_block_realize(XenDevice *xendev, Error **errp)
 {
     XenBlockDevice *blockdev = XEN_BLOCK_DEVICE(xendev);
@@ -210,6 +249,9 @@ static void xen_block_realize(XenDevice *xendev, Error **errp)
         error_setg(errp, "device needs media, but drive is empty");
         return;
     }
+
+    if (xen_block_device_configure(xendev, errp))
+        return;
 
     if (!blkconf_apply_backend_options(conf, blockdev->info & VDISK_READONLY,
                                        true, errp)) {

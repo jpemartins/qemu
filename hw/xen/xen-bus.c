@@ -22,12 +22,19 @@
 
 XenDeviceHandler *xen_dev_handler;
 
+bool xen_device_needs_backend(XenDevice *xendev)
+{
+    XenDeviceClass *xendev_class = XEN_DEVICE_GET_CLASS(xendev);
+
+    return !xendev->backend || !strcmp(xendev_class->backend, xendev->backend);
+}
+
 static char *xen_device_get_backend_path(XenDevice *xendev)
 {
     XenBus *xenbus = XEN_BUS(qdev_get_parent_bus(DEVICE(xendev)));
     XenDeviceClass *xendev_class = XEN_DEVICE_GET_CLASS(xendev);
     const char *type = object_get_typename(OBJECT(xendev));
-    const char *backend = xendev_class->backend;
+    const char *backend = xendev->backend ?:xendev_class->backend;
 
     if (!backend) {
         backend = type;
@@ -593,6 +600,9 @@ static void xen_device_backend_create(XenDevice *xendev, Error **errp)
         return;
     }
 
+    if (!xen_device_needs_backend(xendev))
+        return;
+
     xendev->backend_state_watch =
         xen_bus_add_watch(xenbus, xendev->backend_path,
                           "state", xen_device_backend_changed,
@@ -754,6 +764,10 @@ static void xen_device_frontend_create(XenDevice *xendev, Error **errp)
     if (local_err) {
         error_propagate_prepend(errp, local_err,
                                 "failed to create frontend: ");
+        return;
+    }
+
+    if (!xen_device_needs_backend(xendev)) {
         return;
     }
 
@@ -1177,10 +1191,15 @@ static void xen_device_realize(DeviceState *dev, Error **errp)
                               xendev->frontend_path);
     xen_device_backend_printf(xendev, "frontend-id", "%u",
                               xendev->frontend_id);
-    xen_device_backend_printf(xendev, "hotplug-status", "connected");
 
     xen_device_backend_set_online(xendev, true);
-    xen_device_backend_set_state(xendev, XenbusStateInitWait);
+    if (xen_device_needs_backend(xendev)) {
+        xen_device_backend_printf(xendev, "hotplug-status", "connected");
+
+        xen_device_backend_set_state(xendev, XenbusStateInitWait);
+    } else {
+        xen_device_backend_set_state(xendev, XenbusStateInitialising);
+    }
 
     xen_device_frontend_printf(xendev, "backend", "%s",
                                xendev->backend_path);
@@ -1198,6 +1217,7 @@ unrealize:
 }
 
 static Property xen_device_props[] = {
+    DEFINE_PROP_STRING("backendtype", XenDevice, backend),
     DEFINE_PROP_UINT16("frontend-id", XenDevice, frontend_id,
                        DOMID_INVALID),
     DEFINE_PROP_END_OF_LIST()

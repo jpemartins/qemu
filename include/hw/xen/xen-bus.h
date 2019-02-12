@@ -19,6 +19,7 @@ typedef struct XenWatch XenWatch;
 typedef struct XenDevice {
     DeviceState qdev;
     domid_t frontend_id;
+    char *backend;
     char *name;
     char *backend_path, *frontend_path;
     enum xenbus_state backend_state, frontend_state;
@@ -81,6 +82,8 @@ typedef struct XenBusClass {
     OBJECT_GET_CLASS(XenBusClass, (obj), TYPE_XEN_BUS)
 
 void xen_bus_init(void);
+
+bool xen_device_needs_backend(XenDevice *xendev);
 
 void xen_device_backend_set_state(XenDevice *xendev,
                                   enum xenbus_state state);

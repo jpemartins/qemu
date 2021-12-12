@@ -24,6 +24,7 @@
 #include "hw/i386/pc.h"
 #include "hw/pci/msi.h"
 #include "hw/pci/pci_bus.h"
+#include "hw/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "amd_iommu.h"
 #include "qapi/error.h"
@@ -892,6 +893,35 @@ static inline uint64_t amdvi_get_pte_entry(AMDVIState *s, uint64_t pte_addr,
     return pte;
 }
 
+static inline int amdvi_set_pte_entry(AMDVIState *s, uint64_t pte_addr,
+                                      uint16_t devid, uint64_t pte)
+{
+    if (dma_memory_write(&address_space_memory, pte_addr, &pte, sizeof(pte))) {
+        trace_amdvi_get_pte_hwerror(pte_addr);
+        amdvi_log_pagetab_error(s, devid, pte_addr, 0);
+        return -EINVAL;
+    }
+    return 0;
+}
+
+static bool amdvi_had_update(AMDVIAddressSpace *as, uint64_t dte,
+                             uint64_t *pte, unsigned perms)
+{
+    bool is_write = perms & AMDVI_PERM_WRITE;
+    bool dirty, access;
+
+    dirty = is_write && (dte & AMDVI_DEV_HADEN);
+    access = (!is_write|dirty) && (dte & AMDVI_DEV_HAEN);
+
+    if (access)
+        *pte |= AMDVI_DEV_PERM_ACCESS;
+    if (dirty)
+        *pte |= AMDVI_DEV_PERM_DIRTY;
+
+    trace_amdvi_had_update(*pte, dirty, access);
+    return dirty || access;
+}
+
 static void amdvi_page_walk(AMDVIAddressSpace *as, uint64_t *dte,
                             IOMMUTLBEntry *ret, unsigned perms,
                             hwaddr addr)
@@ -940,6 +970,9 @@ static void amdvi_page_walk(AMDVIAddressSpace *as, uint64_t *dte,
         } else {
             page_mask = pte_get_page_mask(oldlevel);
         }
+
+        if (amdvi_had_update(as, dte[0], &pte, perms))
+            amdvi_set_pte_entry(as->iommu_state, pte_addr, as->devfn, cpu_to_le64(pte));
 
         /* get access permissions from pte */
         ret->iova = addr & page_mask;

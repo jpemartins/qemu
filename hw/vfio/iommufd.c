@@ -150,6 +150,10 @@ static int iommufd_get_dirty_bitmap(VFIOContainer *bcontainer, uint64_t iova,
     VFIOIOASHwpt *hwpt;
     unsigned long *data, page_size, bitmap_size, pages;
 
+    if (!memory_global_dirty_devices()) {
+        return 0;
+    }
+
     if (!bcontainer->dirty_pages_supported) {
         return 0;
     }

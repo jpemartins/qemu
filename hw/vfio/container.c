@@ -84,6 +84,10 @@ static bool vfio_devices_all_dirty_tracking(VFIOContainer *bcontainer)
     VFIODevice *vbasedev;
     MigrationState *ms = migrate_get_current();
 
+    if (bcontainer->dirty_pages_supported) {
+        return true;
+    }
+
     if (!migration_is_setup_or_active(ms->state)) {
         return false;
     }
@@ -310,6 +314,10 @@ static int vfio_get_dirty_bitmap(VFIOContainer *bcontainer, uint64_t iova,
     struct vfio_iommu_type1_dirty_bitmap_get *range;
     uint64_t pages;
     int ret;
+
+    if (!memory_global_dirty_devices()) {
+        return 0;
+    }
 
     dbitmap = g_malloc0(sizeof(*dbitmap) + sizeof(*range));
 

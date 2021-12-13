@@ -341,6 +341,10 @@ static bool vfio_devices_all_dirty_tracking(VFIOContainer *container)
     VFIODevice *vbasedev;
     MigrationState *ms = migrate_get_current();
 
+    if (container->dirty_pages_supported) {
+        return true;
+    }
+
     if (!migration_is_setup_or_active(ms->state)) {
         return false;
     }
@@ -1257,7 +1261,11 @@ static int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
     struct vfio_iommu_type1_dirty_bitmap *dbitmap;
     struct vfio_iommu_type1_dirty_bitmap_get *range;
     uint64_t pages;
+    uint64_t dirty_pages;
     int ret;
+
+    if (!memory_global_dirty_devices())
+        return 0;
 
     dbitmap = g_malloc0(sizeof(*dbitmap) + sizeof(*range));
 
@@ -1291,8 +1299,11 @@ static int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
         goto err_out;
     }
 
+    dirty_pages = total_dirty_pages;
     cpu_physical_memory_set_dirty_lebitmap((unsigned long *)range->bitmap.data,
                                             ram_addr, pages);
+    if (total_dirty_pages > dirty_pages)
+        error_report("dirty_pages=%lu", total_dirty_pages - dirty_pages);
 
     trace_vfio_get_dirty_bitmap(container->fd, range->iova, range->size,
                                 range->bitmap.size, ram_addr);

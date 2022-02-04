@@ -194,6 +194,7 @@
 #define VTD_ECAP_SRS                (1ULL << 31)
 #define VTD_ECAP_PASID              (1ULL << 40)
 #define VTD_ECAP_SMTS               (1ULL << 43)
+#define VTD_ECAP_SLADS              (1ULL << 45)
 #define VTD_ECAP_SLTS               (1ULL << 46)
 
 /* CAP_REG */
@@ -512,6 +513,7 @@ typedef struct VTDRootEntry VTDRootEntry;
 
 #define VTD_SM_PASID_ENTRY_AW          7ULL /* Adjusted guest-address-width */
 #define VTD_SM_PASID_ENTRY_DID(val)    ((val) & VTD_DOMAIN_ID_MASK)
+#define VTD_SM_PASID_ENTRY_SLADE       (1ULL << 9)
 
 /* Second Level Page Translation Pointer*/
 #define VTD_SM_PASID_ENTRY_SLPTPTR     (~0xfffULL)
@@ -535,5 +537,7 @@ typedef struct VTDRootEntry VTDRootEntry;
 #define VTD_SL_PT_BASE_ADDR_MASK(aw) (~(VTD_PAGE_SIZE - 1) & VTD_HAW_MASK(aw))
 #define VTD_SL_IGN_COM              0xbff0000000000000ULL
 #define VTD_SL_TM                   (1ULL << 62)
+#define VTD_SL_A                    (1ULL << 8)
+#define VTD_SL_D                    (1ULL << 9)
 
 #endif

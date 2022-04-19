@@ -314,7 +314,7 @@ out:
 /* Must be with IOMMU lock held */
 static void vtd_update_iotlb(IntelIOMMUState *s, uint16_t source_id,
                              uint16_t domain_id, hwaddr addr, uint64_t slpte,
-                             uint8_t access_flags, uint32_t level)
+                             uint8_t access_flags, uint32_t level, uint16_t pe)
 {
     VTDIOTLBEntry *entry = g_malloc(sizeof(*entry));
     uint64_t *key = g_malloc(sizeof(*key));
@@ -331,6 +331,7 @@ static void vtd_update_iotlb(IntelIOMMUState *s, uint16_t source_id,
     entry->slpte = slpte;
     entry->access_flags = access_flags;
     entry->mask = vtd_slpt_level_page_mask(level);
+    entry->sm_pe_flags = pe;
     *key = vtd_get_iotlb_key(gfn, source_id, level);
     g_hash_table_replace(s->iotlb, key, entry);
 }
@@ -963,6 +964,19 @@ static dma_addr_t vtd_get_iova_pgtbl_base(IntelIOMMUState *s,
     }
 
     return vtd_ce_get_slpt_base(ce);
+}
+
+static uint64_t vtd_sm_pasid_entry_flags(IntelIOMMUState *s,
+                                         VTDContextEntry *ce)
+{
+    VTDPASIDEntry pe;
+
+    if (!s->root_scalable) {
+        return 0;
+    }
+
+    vtd_ce_get_rid2pasid_entry(s, ce, &pe);
+    return pe.val[0] & (~VTD_SM_PASID_ENTRY_SLPTPTR);
 }
 
 /*
@@ -1789,7 +1803,7 @@ static bool vtd_do_iommu_translate(VTDAddressSpace *vtd_as, PCIBus *bus,
     page_mask = vtd_slpt_level_page_mask(level);
     access_flags = IOMMU_ACCESS_FLAG(reads, writes);
     vtd_update_iotlb(s, source_id, vtd_get_domain_id(s, &ce), addr, slpte,
-                     access_flags, level);
+                     access_flags, level, vtd_sm_pasid_entry_flags(s, &ce));
 out:
     vtd_iommu_unlock(s);
     entry->iova = addr & page_mask;

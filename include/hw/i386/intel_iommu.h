@@ -155,6 +155,7 @@ struct VTDIOTLBEntry {
     uint64_t slpte;
     uint64_t mask;
     uint8_t access_flags;
+    uint16_t sm_pe_flags;
 };
 
 /* VT-d Source-ID Qualifier types */

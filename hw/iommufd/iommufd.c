@@ -243,6 +243,27 @@ int iommufd_get_dirty_iova(int iommufd, uint32_t hwpt_id, uint64_t iova,
     return !ret ? 0 : -errno;
 }
 
+int iommufd_unmap_dma_dirty(int iommufd, uint32_t ioas, hwaddr iova,
+                            ram_addr_t size, uint64_t page_size, uint64_t *data)
+{
+    int ret;
+    struct iommu_ioas_unmap_dirty unmap = {
+        .size = sizeof(unmap),
+        .ioas_id = ioas,
+        .bitmap = {
+            .iova = iova, .length = size,
+            .page_size = page_size, .data = (__u64 *)data,
+        },
+    };
+
+    ret = ioctl(iommufd, IOMMU_IOAS_UNMAP_DIRTY, &unmap);
+    trace_iommufd_unmap_dma_dirty(iommufd, ioas, iova, size, page_size, ret);
+    if (ret) {
+        error_report("IOMMU_IOAS_UNMAP_DIRTY failed: %s", strerror(errno));
+    }
+    return !ret ? 0 : -errno;
+}
+
 static void iommufd_register_types(void)
 {
     qemu_mutex_init(&iommufd_lock);

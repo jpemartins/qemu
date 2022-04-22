@@ -36,6 +36,8 @@
 #include "exec/ram_addr.h"
 #include "migration/migration.h"
 
+static bool vfio_devices_all_running_and_saving(VFIOContainer *container);
+
 static bool iommufd_check_extension(VFIOContainer *bcontainer,
                                     VFIOContainerFeature feat)
 {
@@ -72,6 +74,36 @@ static int iommufd_copy(VFIOContainer *src, VFIOContainer *dst,
                             container_dst->ioas_id, iova, size, readonly);
 }
 
+static int iommufd_unmap_bitmap(int iommufd, int ioas_id, hwaddr iova,
+                                ram_addr_t size, ram_addr_t translated)
+{
+    unsigned long *data, pgsize, bitmap_size, pages;
+    int ret;
+
+    pgsize = qemu_real_host_page_size;
+    pages = REAL_HOST_PAGE_ALIGN(size) / qemu_real_host_page_size;
+    bitmap_size = ROUND_UP(pages, sizeof(__u64) * BITS_PER_BYTE) /
+                                         BITS_PER_BYTE;
+    data = g_try_malloc0(bitmap_size);
+    if (!data) {
+        ret = -ENOMEM;
+        goto err_out;
+    }
+
+    ret = iommufd_unmap_dma_dirty(iommufd, ioas_id, iova, size, pgsize, data);
+    if (ret) {
+        goto err_out;
+    }
+
+    cpu_physical_memory_set_dirty_lebitmap(data, translated, pages);
+
+    trace_vfio_get_dirty_bitmap(iommufd, iova, size, bitmap_size, translated);
+
+err_out:
+    g_free(data);
+    return ret;
+}
+
 static int iommufd_unmap(VFIOContainer *bcontainer,
                          hwaddr iova, ram_addr_t size,
                          IOMMUTLBEntry *iotlb)
@@ -79,7 +111,13 @@ static int iommufd_unmap(VFIOContainer *bcontainer,
     VFIOIOMMUFDContainer *container = container_of(bcontainer,
                                                    VFIOIOMMUFDContainer, obj);
 
-    /* TODO: Handle dma_unmap_bitmap with iotlb args (migration) */
+    if (iotlb && bcontainer->dirty_pages_supported &&
+        vfio_devices_all_running_and_saving(bcontainer)) {
+        return iommufd_unmap_bitmap(container->iommufd,
+                                    container->ioas_id, iova, size,
+                                    iotlb->translated_addr);
+    }
+
     return iommufd_unmap_dma(container->iommufd,
                              container->ioas_id, iova, size);
 }
@@ -365,6 +403,38 @@ static int vfio_device_reset(VFIODevice *vbasedev)
         }
     }
     return 0;
+}
+
+static bool vfio_devices_all_running_and_saving(VFIOContainer *bcontainer)
+{
+    MigrationState *ms = migrate_get_current();
+    VFIOIOMMUFDContainer *container;
+    VFIODevice *vbasedev;
+    VFIOIOASHwpt *hwpt;
+
+    if (!migration_is_setup_or_active(ms->state)) {
+        return false;
+    }
+
+    container = container_of(bcontainer, VFIOIOMMUFDContainer, obj);
+
+    QLIST_FOREACH(hwpt, &container->hwpt_list, next) {
+        QLIST_FOREACH(vbasedev, &hwpt->device_list, hwpt_next) {
+            VFIOMigration *migration = vbasedev->migration;
+
+            if (!migration) {
+                return false;
+            }
+
+            if ((migration->device_state & VFIO_DEVICE_STATE_SAVING) &&
+                (migration->device_state & VFIO_DEVICE_STATE_RUNNING)) {
+                continue;
+            } else {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 static bool vfio_iommufd_devices_all_dirty_tracking(VFIOContainer *bcontainer)

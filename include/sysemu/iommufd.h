@@ -53,5 +53,8 @@ int iommufd_backend_invalidate_cache(int iommufd, uint32_t hwpt_id,
                                      uint32_t len, void *data_ptr);
 int iommufd_backend_set_dirty_tracking(IOMMUFDBackend *be, uint32_t hwpt_id,
                                        bool start);
+int iommufd_backend_get_dirty_iova(IOMMUFDBackend *be, uint32_t hwpt_id,
+                                   uint64_t iova, ram_addr_t size,
+                                   uint64_t page_size, uint64_t *data);
 
 #endif

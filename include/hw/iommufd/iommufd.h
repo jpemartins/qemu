@@ -34,5 +34,7 @@ int iommufd_map_dma(int iommufd, uint32_t ioas, hwaddr iova,
 int iommufd_copy_dma(int iommufd, uint32_t src_ioas, uint32_t dst_ioas,
                      hwaddr iova, ram_addr_t size, bool readonly);
 int iommufd_set_dirty_tracking(int iommufd, uint32_t hwpt_id, bool start);
+int iommufd_get_dirty_iova(int iommufd, uint32_t hwpt_id, uint64_t iova,
+                           ram_addr_t size, uint64_t page_size, uint64_t *data);
 bool iommufd_supported(void);
 #endif /* HW_IOMMUFD_IOMMUFD_H */

@@ -33,6 +33,7 @@
 #include "hw/qdev-core.h"
 #include "sysemu/reset.h"
 #include "qemu/cutils.h"
+#include "exec/ram_addr.h"
 #include "migration/migration.h"
 
 static bool iommufd_check_extension(VFIOContainer *bcontainer,
@@ -100,6 +101,48 @@ static void iommufd_set_dirty_page_tracking(VFIOContainer *bcontainer,
     }
 
     bcontainer->dirty_pages_supported = start;
+}
+
+static int iommufd_get_dirty_bitmap(VFIOContainer *bcontainer, uint64_t iova,
+                                    uint64_t size, ram_addr_t ram_addr)
+{
+    VFIOIOMMUFDContainer *container = container_of(bcontainer,
+                                                   VFIOIOMMUFDContainer, obj);
+    int ret;
+    VFIOIOASHwpt *hwpt;
+    unsigned long *data, page_size, bitmap_size, pages;
+
+    if (!bcontainer->dirty_pages_supported) {
+        return 0;
+    }
+
+    page_size = qemu_real_host_page_size;
+    pages = REAL_HOST_PAGE_ALIGN(size) / qemu_real_host_page_size;
+    bitmap_size = ROUND_UP(pages, sizeof(__u64) * BITS_PER_BYTE) /
+                                         BITS_PER_BYTE;
+    data = g_try_malloc0(bitmap_size);
+    if (!data) {
+        ret = -ENOMEM;
+        goto err_out;
+    }
+
+    QLIST_FOREACH(hwpt, &container->hwpt_list, next) {
+        ret = iommufd_get_dirty_iova(container->iommufd, hwpt->hwpt_id,
+                                     iova, size, page_size, data);
+        if (ret) {
+            goto err_out;
+        }
+    }
+
+    cpu_physical_memory_set_dirty_lebitmap(data, ram_addr, pages);
+
+    trace_vfio_get_dirty_bitmap(container->iommufd, iova, size, bitmap_size,
+                                ram_addr);
+
+err_out:
+    g_free(data);
+
+    return ret;
 }
 
 static int vfio_get_devicefd(const char *sysfs_path, Error **errp)
@@ -611,6 +654,7 @@ static void vfio_iommufd_class_init(ObjectClass *klass,
     vccs->reset = vfio_iommufd_container_reset;
     vccs->devices_all_dirty_tracking = vfio_iommufd_devices_all_dirty_tracking;
     vccs->set_dirty_page_tracking = iommufd_set_dirty_page_tracking;
+    vccs->get_dirty_bitmap = iommufd_get_dirty_bitmap;
 }
 
 static const TypeInfo vfio_iommufd_info = {

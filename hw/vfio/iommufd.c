@@ -33,6 +33,7 @@
 #include "hw/qdev-core.h"
 #include "sysemu/reset.h"
 #include "qemu/cutils.h"
+#include "migration/migration.h"
 
 static bool iommufd_check_extension(VFIOContainer *bcontainer,
                                     VFIOContainerFeature feat)
@@ -80,6 +81,25 @@ static int iommufd_unmap(VFIOContainer *bcontainer,
     /* TODO: Handle dma_unmap_bitmap with iotlb args (migration) */
     return iommufd_unmap_dma(container->iommufd,
                              container->ioas_id, iova, size);
+}
+
+static void iommufd_set_dirty_page_tracking(VFIOContainer *bcontainer,
+                                            bool start)
+{
+    VFIOIOMMUFDContainer *container = container_of(bcontainer,
+                                                   VFIOIOMMUFDContainer, obj);
+    int ret;
+    VFIOIOASHwpt *hwpt;
+
+    QLIST_FOREACH(hwpt, &container->hwpt_list, next) {
+        ret = iommufd_set_dirty_tracking(container->iommufd,
+                                         hwpt->hwpt_id, start);
+        if (ret) {
+            return;
+        }
+    }
+
+    bcontainer->dirty_pages_supported = start;
 }
 
 static int vfio_get_devicefd(const char *sysfs_path, Error **errp)
@@ -304,6 +324,40 @@ static int vfio_device_reset(VFIODevice *vbasedev)
     return 0;
 }
 
+static bool vfio_iommufd_devices_all_dirty_tracking(VFIOContainer *bcontainer)
+{
+    MigrationState *ms = migrate_get_current();
+    VFIOIOMMUFDContainer *container;
+    VFIODevice *vbasedev;
+    VFIOIOASHwpt *hwpt;
+
+    if (bcontainer->dirty_pages_supported) {
+        return true;
+    }
+
+    if (!migration_is_setup_or_active(ms->state)) {
+        return false;
+    }
+
+    container = container_of(bcontainer, VFIOIOMMUFDContainer, obj);
+
+    QLIST_FOREACH(hwpt, &container->hwpt_list, next) {
+        QLIST_FOREACH(vbasedev, &hwpt->device_list, hwpt_next) {
+            VFIOMigration *migration = vbasedev->migration;
+
+            if (!migration) {
+                return false;
+            }
+
+            if ((vbasedev->pre_copy_dirty_page_tracking == ON_OFF_AUTO_OFF)
+                && (migration->device_state & VFIO_DEVICE_STATE_RUNNING)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 static int vfio_iommufd_container_reset(VFIOContainer *bcontainer)
 {
     VFIOIOMMUFDContainer *container;
@@ -446,6 +500,7 @@ static int iommufd_attach_device(VFIODevice *vbasedev, AddressSpace *as,
      */
 
     vfio_as_add_container(space, bcontainer);
+    bcontainer->dirty_pages_supported = true;
     bcontainer->initialized = true;
 
 out:
@@ -554,6 +609,8 @@ static void vfio_iommufd_class_init(ObjectClass *klass,
     vccs->attach_device = iommufd_attach_device;
     vccs->detach_device = iommufd_detach_device;
     vccs->reset = vfio_iommufd_container_reset;
+    vccs->devices_all_dirty_tracking = vfio_iommufd_devices_all_dirty_tracking;
+    vccs->set_dirty_page_tracking = iommufd_set_dirty_page_tracking;
 }
 
 static const TypeInfo vfio_iommufd_info = {

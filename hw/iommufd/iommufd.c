@@ -201,6 +201,24 @@ int iommufd_copy_dma(int iommufd, uint32_t src_ioas, uint32_t dst_ioas,
     return !ret ? 0 : -errno;
 }
 
+int iommufd_set_dirty_tracking(int iommufd, uint32_t hwpt_id, bool start)
+{
+    int ret;
+    struct iommu_hwpt_set_dirty set_dirty = {
+            .size = sizeof(set_dirty),
+            .hwpt_id = hwpt_id,
+            .flags = !start ? IOMMU_DIRTY_TRACKING_DISABLED :
+                        IOMMU_DIRTY_TRACKING_ENABLED,
+    };
+
+    ret = ioctl(iommufd, IOMMU_HWPT_SET_DIRTY, &set_dirty);
+    trace_iommufd_set_dirty(iommufd, hwpt_id, start, ret);
+    if (ret) {
+        error_report("IOMMU_HWPT_SET_DIRTY failed: %s", strerror(errno));
+    }
+    return !ret ? 0 : -errno;
+}
+
 static void iommufd_register_types(void)
 {
     qemu_mutex_init(&iommufd_lock);

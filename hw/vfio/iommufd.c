@@ -77,7 +77,7 @@ static int iommufd_copy(VFIOContainer *src, VFIOContainer *dst,
 static int iommufd_unmap_bitmap(int iommufd, int ioas_id, hwaddr iova,
                                 ram_addr_t size, ram_addr_t translated)
 {
-    unsigned long *data, pgsize, bitmap_size, pages;
+    unsigned long *data, pgsize, bitmap_size, pages, dirty;
     int ret;
 
     pgsize = qemu_real_host_page_size;
@@ -95,9 +95,10 @@ static int iommufd_unmap_bitmap(int iommufd, int ioas_id, hwaddr iova,
         goto err_out;
     }
 
+    dirty = total_dirty_pages;
     cpu_physical_memory_set_dirty_lebitmap(data, translated, pages);
 
-    trace_vfio_get_dirty_bitmap(iommufd, iova, size, bitmap_size, translated);
+    trace_vfio_set_dirty_pages(iommufd, iova, size, total_dirty_pages - dirty);
 
 err_out:
     g_free(data);
@@ -148,7 +149,7 @@ static int iommufd_get_dirty_bitmap(VFIOContainer *bcontainer, uint64_t iova,
                                                    VFIOIOMMUFDContainer, obj);
     int ret;
     VFIOIOASHwpt *hwpt;
-    unsigned long *data, page_size, bitmap_size, pages;
+    unsigned long *data, page_size, bitmap_size, pages, dirty;
 
     if (!memory_global_dirty_devices()) {
         return 0;
@@ -176,10 +177,11 @@ static int iommufd_get_dirty_bitmap(VFIOContainer *bcontainer, uint64_t iova,
         }
     }
 
+    dirty = total_dirty_pages;
     cpu_physical_memory_set_dirty_lebitmap(data, ram_addr, pages);
 
     trace_vfio_get_dirty_bitmap(container->iommufd, iova, size, bitmap_size,
-                                ram_addr);
+                                ram_addr, total_dirty_pages - dirty);
 
 err_out:
     g_free(data);

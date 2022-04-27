@@ -146,6 +146,7 @@ static int vfio_dma_unmap_bitmap(VFIOLegacyContainer *container,
     struct vfio_iommu_type1_dma_unmap *unmap;
     struct vfio_bitmap *bitmap;
     uint64_t pages = REAL_HOST_PAGE_ALIGN(size) / qemu_real_host_page_size;
+    uint64_t dirty;
     int ret;
 
     unmap = g_malloc0(sizeof(*unmap) + sizeof(*bitmap));
@@ -181,8 +182,11 @@ static int vfio_dma_unmap_bitmap(VFIOLegacyContainer *container,
 
     ret = ioctl(container->fd, VFIO_IOMMU_UNMAP_DMA, unmap);
     if (!ret) {
+        dirty = total_dirty_pages;
         cpu_physical_memory_set_dirty_lebitmap((unsigned long *)bitmap->data,
                 iotlb->translated_addr, pages);
+        trace_vfio_set_dirty_pages(container->fd, iova, size,
+                                   total_dirty_pages - dirty);
     } else {
         error_report("VFIO_UNMAP_DMA with DIRTY_BITMAP : %m");
     }
@@ -312,7 +316,7 @@ static int vfio_get_dirty_bitmap(VFIOContainer *bcontainer, uint64_t iova,
                                                   VFIOLegacyContainer, obj);
     struct vfio_iommu_type1_dirty_bitmap *dbitmap;
     struct vfio_iommu_type1_dirty_bitmap_get *range;
-    uint64_t pages;
+    uint64_t pages, dirty;
     int ret;
 
     if (!memory_global_dirty_devices()) {
@@ -351,11 +355,13 @@ static int vfio_get_dirty_bitmap(VFIOContainer *bcontainer, uint64_t iova,
         goto err_out;
     }
 
+
+    dirty = total_dirty_pages;
     cpu_physical_memory_set_dirty_lebitmap((unsigned long *)range->bitmap.data,
                                             ram_addr, pages);
-
     trace_vfio_get_dirty_bitmap(container->fd, range->iova, range->size,
-                                range->bitmap.size, ram_addr);
+                                range->bitmap.size, ram_addr,
+                                total_dirty_pages - dirty);
 err_out:
     g_free(range->bitmap.data);
     g_free(dbitmap);

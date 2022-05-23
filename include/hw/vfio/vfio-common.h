@@ -61,11 +61,17 @@ typedef struct VFIORegion {
 typedef struct VFIOMigration {
     struct VFIODevice *vbasedev;
     VMChangeStateEntry *vm_state;
+    /* v1 */
     VFIORegion region;
     uint32_t device_state;
     int vm_running;
     Notifier migration_state;
     uint64_t pending_bytes;
+    /* v2 */
+    bool v2;
+    int data_fd;
+    void *data_buffer;
+    size_t data_buffer_size;
 } VFIOMigration;
 
 typedef struct VFIOAddressSpace {

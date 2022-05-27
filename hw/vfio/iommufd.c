@@ -315,6 +315,7 @@ static int iommufd_cdev_attach(const char *name, VFIODevice *vbasedev,
     VFIOContainerBase *bcontainer;
     VFIOIOMMUFDContainer *container;
     VFIOAddressSpace *space;
+    IOMMUFDDevice *idev = &vbasedev->idev;
     struct vfio_device_info dev_info = { .argsz = sizeof(dev_info) };
     int ret, devfd;
     uint32_t ioas_id;
@@ -378,6 +379,9 @@ static int iommufd_cdev_attach(const char *name, VFIODevice *vbasedev,
     bcontainer = &container->bcontainer;
     vfio_container_init(bcontainer, space, iommufd_vioc);
     QLIST_INSERT_HEAD(&space->containers, bcontainer, next);
+
+    iommufd_device_init(idev, sizeof(*idev),
+                        container->be, vbasedev->devid, container->ioas_id);
 
     ret = iommufd_cdev_attach_container(vbasedev, container, errp);
     if (ret) {

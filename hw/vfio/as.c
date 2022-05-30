@@ -1282,7 +1282,7 @@ int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
     }
 
     cpu_physical_memory_set_dirty_lebitmap(vbmap.bitmap, ram_addr,
-                                           vbmap.pages);
+                                           vbmap.pages, NULL);
 
     trace_vfio_get_dirty_bitmap(iova, size, vbmap.size, ram_addr);
 out:

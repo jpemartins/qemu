@@ -300,6 +300,10 @@ static int vfio_device_attach_container(VFIODevice *vbasedev,
         }
     }
 
+    iommufd_device_init(&vbasedev->idev, sizeof(vbasedev->idev),
+                       TYPE_VFIO_IOMMU_DEVICE,
+                       container->be->fd, vbasedev->devid, container->ioas_id);
+
     ret = iommufd_backend_alloc_hwpt(iommufd, vbasedev->devid,
                                      container->ioas_id, &hwpt_id);
 
@@ -539,6 +543,58 @@ static void vfio_iommu_backend_iommufd_ops_class_init(ObjectClass *oc,
     ops->attach_device = iommufd_attach_device;
     ops->detach_device = iommufd_detach_device;
 }
+
+static int vfio_iommu_device_attach_hwpt(IOMMUFDDevice *idev,
+                                         uint32_t hwpt_id)
+{
+    VFIODevice *vbasedev = container_of(idev, VFIODevice, idev);
+    struct vfio_device_attach_iommufd_pt attach = {
+        .argsz = sizeof(attach),
+        .flags = 0,
+        .pt_id = hwpt_id,
+    };
+    int ret;
+
+    ret = ioctl(vbasedev->fd, VFIO_DEVICE_ATTACH_IOMMUFD_PT, &attach);
+    if (ret) {
+        ret = -errno;
+    }
+
+    return ret;
+}
+
+static int vfio_iommu_device_detach_hwpt(IOMMUFDDevice *idev)
+{
+    VFIODevice *vbasedev = container_of(idev, VFIODevice, idev);
+    Error *err = NULL;
+    int ret;
+
+    ret = __vfio_device_detach_hwpt(vbasedev, &err);
+    error_free(err);
+    return ret;
+}
+
+static void vfio_iommu_device_class_init(ObjectClass *klass,
+                                         void *data)
+{
+    IOMMUFDDeviceClass *idevc = IOMMU_DEVICE_CLASS(klass);
+
+    idevc->attach_hwpt = vfio_iommu_device_attach_hwpt;
+    idevc->detach_hwpt = vfio_iommu_device_detach_hwpt;
+}
+
+static const TypeInfo vfio_iommu_device_info = {
+    .parent = TYPE_IOMMUFD_DEVICE,
+    .name = TYPE_VFIO_IOMMU_DEVICE,
+    .class_init = vfio_iommu_device_class_init,
+};
+
+static void vfio_iommufd_register_types(void)
+{
+    type_register_static(&vfio_iommu_device_info);
+}
+
+type_init(vfio_iommufd_register_types)
 
 static const TypeInfo vfio_iommu_backend_iommufd_ops_type = {
     .name = TYPE_VFIO_IOMMU_BACKEND_IOMMUFD_OPS,

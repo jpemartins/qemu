@@ -7,6 +7,8 @@
 /* PCI includes legacy ISA access.  */
 #include "hw/isa/isa.h"
 
+#include "sysemu/iommufd_device.h"
+
 extern bool pci_available;
 
 /* PCI bus */
@@ -368,6 +370,17 @@ void pci_device_deassert_intx(PCIDevice *dev);
 typedef AddressSpace *(*PCIIOMMUFunc)(PCIBus *, void *, int);
 
 AddressSpace *pci_device_iommu_address_space(PCIDevice *dev);
+static inline int
+pci_device_set_iommu_device(PCIDevice *dev, IOMMUFDDevice *idev)
+{
+    return 0;
+}
+
+static inline void
+pci_device_unset_iommu_device(PCIDevice *dev)
+{
+}
+
 void pci_setup_iommu(PCIBus *bus, PCIIOMMUFunc fn, void *opaque);
 
 pcibus_t pci_bar_address(PCIDevice *d,

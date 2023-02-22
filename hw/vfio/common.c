@@ -44,6 +44,7 @@
 #include "migration/blocker.h"
 #include "migration/qemu-file.h"
 #include "sysemu/tpm.h"
+#include "qemu/iova-tree.h"
 
 VFIOGroupList vfio_group_list =
     QLIST_HEAD_INITIALIZER(vfio_group_list);
@@ -426,6 +427,11 @@ void vfio_unblock_multiple_devices_migration(void)
     multiple_devices_migration_blocker = NULL;
 }
 
+static bool vfio_have_giommu(VFIOContainer *container)
+{
+    return !QLIST_EMPTY(&container->giommu_list);
+}
+
 static void vfio_set_migration_error(int err)
 {
     MigrationState *ms = migrate_get_current();
@@ -610,6 +616,7 @@ static int vfio_dma_map(VFIOContainer *container, hwaddr iova,
         .iova = iova,
         .size = size,
     };
+    int ret;
 
     if (!readonly) {
         map.flags |= VFIO_DMA_MAP_FLAG_WRITE;
@@ -626,8 +633,10 @@ static int vfio_dma_map(VFIOContainer *container, hwaddr iova,
         return 0;
     }
 
+    ret = -errno;
     error_report("VFIO_MAP_DMA failed: %s", strerror(errno));
-    return -errno;
+
+    return ret;
 }
 
 static void vfio_host_win_add(VFIOContainer *container,
@@ -1326,10 +1335,126 @@ static int vfio_set_dirty_page_tracking(VFIOContainer *container, bool start)
     return ret;
 }
 
+static bool vfio_get_section_iova_range(VFIOContainer *container,
+                                        MemoryRegionSection *section,
+                                        hwaddr *out_iova, hwaddr *out_end)
+{
+    Int128 llend, llsize;
+    hwaddr iova, end;
+
+    iova = REAL_HOST_PAGE_ALIGN(section->offset_within_address_space);
+    llend = int128_make64(section->offset_within_address_space);
+    llend = int128_add(llend, section->size);
+    llend = int128_and(llend, int128_exts64(qemu_real_host_page_mask()));
+
+    if (int128_ge(int128_make64(iova), llend)) {
+        return false;
+    }
+    end = int128_get64(int128_sub(llend, int128_one()));
+
+    if (memory_region_is_iommu(section->mr) ||
+        memory_region_has_ram_discard_manager(section->mr)) {
+	return false;
+    }
+
+    llsize = int128_sub(llend, int128_make64(iova));
+
+    if (memory_region_is_ram_device(section->mr)) {
+        VFIOHostDMAWindow *hostwin;
+        hwaddr pgmask;
+
+        hostwin = vfio_find_hostwin(container, iova, end);
+        if (!hostwin) {
+            return false;
+        }
+
+	pgmask = (1ULL << ctz64(hostwin->iova_pgsizes)) - 1;
+        if ((iova & pgmask) || (int128_get64(llsize) & pgmask)) {
+            return false;
+        }
+    }
+
+    *out_iova = iova;
+    *out_end = int128_get64(llend);
+    return true;
+}
+
+static void vfio_migration_add_mapping(MemoryListener *listener,
+                                       MemoryRegionSection *section)
+{
+    VFIOContainer *container = container_of(listener, VFIOContainer, mappings_listener);
+    hwaddr end = 0;
+    DMAMap map;
+    int ret;
+
+    if (vfio_have_giommu(container)) {
+        vfio_set_migration_error(-EOPNOTSUPP);
+        return;
+    }
+
+    if (!vfio_listener_valid_section(section) ||
+        !vfio_get_section_iova_range(container, section, &map.iova, &end)) {
+        return;
+    }
+
+    map.size = end - map.iova - 1; // IOVATree is inclusive, so subtract 1 from size
+    map.perm = section->readonly ? IOMMU_RO : IOMMU_RW;
+
+    WITH_QEMU_LOCK_GUARD(&container->mappings_mutex) {
+        ret = iova_tree_insert(container->mappings, &map);
+        if (ret) {
+            if (ret == IOVA_ERR_INVALID) {
+                ret = -EINVAL;
+            } else if (ret == IOVA_ERR_OVERLAP) {
+                ret = -EEXIST;
+            }
+        }
+    }
+
+    trace_vfio_migration_mapping_add(map.iova, map.iova + map.size, ret);
+
+    if (ret)
+        vfio_set_migration_error(ret);
+    return;
+}
+
+static void vfio_migration_remove_mapping(MemoryListener *listener,
+                                          MemoryRegionSection *section)
+{
+    VFIOContainer *container = container_of(listener, VFIOContainer, mappings_listener);
+    hwaddr end = 0;
+    DMAMap map;
+
+    if (vfio_have_giommu(container)) {
+        vfio_set_migration_error(-EOPNOTSUPP);
+        return;
+    }
+
+    if (!vfio_listener_valid_section(section) ||
+        !vfio_get_section_iova_range(container, section, &map.iova, &end)) {
+        return;
+    }
+
+    WITH_QEMU_LOCK_GUARD(&container->mappings_mutex) {
+        iova_tree_remove(container->mappings, map);
+    }
+
+    trace_vfio_migration_mapping_del(map.iova, map.iova + map.size);
+}
+
+
+static const MemoryListener vfio_dirty_tracking_listener = {
+    .name = "vfio-migration",
+    .region_add = vfio_migration_add_mapping,
+    .region_del = vfio_migration_remove_mapping,
+};
+
 static void vfio_listener_log_global_start(MemoryListener *listener)
 {
     VFIOContainer *container = container_of(listener, VFIOContainer, listener);
     int ret;
+
+    memory_listener_register(&container->mappings_listener, container->space->as);
 
     ret = vfio_set_dirty_page_tracking(container, true);
     if (ret) {
@@ -1346,6 +1471,8 @@ static void vfio_listener_log_global_stop(MemoryListener *listener)
     if (ret) {
         vfio_set_migration_error(ret);
     }
+
+    memory_listener_unregister(&container->mappings_listener);
 }
 
 static int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
@@ -2172,16 +2299,24 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
     QLIST_INIT(&container->giommu_list);
     QLIST_INIT(&container->hostwin_list);
     QLIST_INIT(&container->vrdl_list);
+    container->mappings = iova_tree_new();
+    if (!container->mappings) {
+        error_setg(errp, "Cannot allocate DMA mappings tree");
+        ret = -ENOMEM;
+        goto free_container_exit;
+    }
+    qemu_mutex_init(&container->mappings_mutex);
+    container->mappings_listener = vfio_dirty_tracking_listener;
 
     ret = vfio_init_container(container, group->fd, errp);
     if (ret) {
-        goto free_container_exit;
+        goto destroy_mappings_exit;
     }
 
     ret = vfio_ram_block_discard_disable(container, true);
     if (ret) {
         error_setg_errno(errp, -ret, "Cannot set discarding of RAM broken");
-        goto free_container_exit;
+        goto destroy_mappings_exit;
     }
 
     switch (container->iommu_type) {
@@ -2317,6 +2452,10 @@ listener_release_exit:
 enable_discards_exit:
     vfio_ram_block_discard_disable(container, false);
 
+destroy_mappings_exit:
+    qemu_mutex_destroy(&container->mappings_mutex);
+    iova_tree_destroy(container->mappings);
+
 free_container_exit:
     g_free(container);
 
@@ -2371,6 +2510,8 @@ static void vfio_disconnect_container(VFIOGroup *group)
         }
 
         trace_vfio_disconnect_container(container->fd);
+        qemu_mutex_destroy(&container->mappings_mutex);
+        iova_tree_destroy(container->mappings);
         close(container->fd);
         g_free(container);
 

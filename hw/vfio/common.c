@@ -506,6 +506,21 @@ static void vfio_set_migration_error(int err)
     }
 }
 
+static bool vfio_devices_all_iommu_passthrough(VFIOContainer *container)
+{
+    VFIOGroup *group;
+    VFIODevice *vbasedev;
+
+    QLIST_FOREACH(group, &container->group_list, container_next) {
+        QLIST_FOREACH(vbasedev, &group->device_list, next) {
+             if (!vbasedev->iommu_passthrough)
+                 return false;
+        }
+    }
+
+    return true;
+}
+
 static bool vfio_devices_all_dirty_tracking(VFIOContainer *container)
 {
     VFIOGroup *group;
@@ -1237,6 +1252,18 @@ static void vfio_listener_region_add(MemoryListener *listener,
             goto fail;
         }
         QLIST_INSERT_HEAD(&container->giommu_list, giommu, giommu_next);
+
+        /*
+         * Any attempts to use make vIOMMU mappings will fail the live migration
+         */
+        if (vfio_devices_all_iommu_passthrough(container)) {
+            MigrationState *ms = migrate_get_current();
+
+            if (migration_is_setup_or_active(ms->state)) {
+                vfio_set_migration_error(-EOPNOTSUPP);
+            }
+        }
+
         memory_region_iommu_replay(giommu->iommu_mr, &giommu->n);
 
         return;
@@ -1514,7 +1541,19 @@ static int vfio_dirty_tracking_init(VFIOContainer *container,
     dirty.listener = vfio_dirty_tracking_listener;
     dirty.container = container;
 
-    if (vfio_viommu_preset()) {
+    /*
+     * vIOMMU models traditionally define the maximum address space width,
+     * which is a superset of the effective IOVA addresses being used e.g.
+     * intel-iommu defines 39-bit and 48-bit, and similarly AMD hardware.
+     *
+     * The user might would like to use that as an optimization, assuming
+     * that a guest being migrated won't use the IOMMU in a non-passthrough
+     * manner. In that case, try to use the boot memory layout that VFIO
+     * DMA-mapped to minimize having to stress high dirty tracking limits.
+     */
+    if (vfio_viommu_preset() &&
+         (!vfio_devices_all_iommu_passthrough(container) ||
+          !QLIST_EMPTY(&container->giommu_list))) {
         hwaddr iommu_max_iova;
 
         ret = vfio_get_max_iova(&iommu_max_iova);

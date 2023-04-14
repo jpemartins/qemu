@@ -455,10 +455,12 @@ static int vfio_get_max_iova(hwaddr *max_iova)
 
 int vfio_block_giommu_migration(Error **errp)
 {
+    hwaddr max;
     int ret;
 
     if (giommu_migration_blocker ||
-        !vfio_viommu_preset()) {
+        !vfio_viommu_preset() ||
+        (vfio_viommu_preset() && !vfio_get_max_iova(&max))) {
         return 0;
     }
 

@@ -377,6 +377,18 @@ static void virtio_iommu_put_domain(gpointer data)
     g_free(domain);
 }
 
+static hwaddr virtio_iommu_input_range_size(VirtIOIOMMU *s)
+{
+    hwaddr max = UINT64_MAX;
+
+    if (s->aw_bits < 64UL) {
+        max = (1UL << s->aw_bits);
+    }
+
+    return max;
+}
+
+
 static AddressSpace *virtio_iommu_find_add_as(PCIBus *bus, void *opaque,
                                               int devfn)
 {
@@ -1165,7 +1177,7 @@ static void virtio_iommu_device_realize(DeviceState *dev, Error **errp)
      */
     s->config.bypass = s->boot_bypass;
     s->config.page_size_mask = TARGET_PAGE_MASK;
-    s->config.input_range.end = UINT64_MAX;
+    s->config.input_range.end = virtio_iommu_input_range_size(s) - 1;
     s->config.domain_range.end = UINT32_MAX;
     s->config.probe_size = VIOMMU_PROBE_SIZE;
 
@@ -1369,6 +1381,7 @@ static Property virtio_iommu_properties[] = {
     DEFINE_PROP_LINK("primary-bus", VirtIOIOMMU, primary_bus,
                      TYPE_PCI_BUS, PCIBus *),
     DEFINE_PROP_BOOL("boot-bypass", VirtIOIOMMU, boot_bypass, true),
+    DEFINE_PROP_UINT8("x-address-width-bits", VirtIOIOMMU, aw_bits, 64UL),
     DEFINE_PROP_END_OF_LIST(),
 };
 

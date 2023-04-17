@@ -61,6 +61,7 @@ struct VirtIOIOMMU {
     QemuRecMutex mutex;
     GTree *endpoints;
     bool boot_bypass;
+    uint8_t aw_bits;
 };
 
 #endif

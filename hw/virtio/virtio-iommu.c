@@ -417,7 +417,8 @@ static AddressSpace *virtio_iommu_find_add_as(PCIBus *bus, void *opaque,
 
         trace_virtio_iommu_init_iommu_mr(name);
 
-        memory_region_init(&sdev->root, OBJECT(s), name, UINT64_MAX);
+        memory_region_init(&sdev->root, OBJECT(s), name,
+                           virtio_iommu_input_range_size(s));
         address_space_init(&sdev->as, &sdev->root, TYPE_VIRTIO_IOMMU);
 
         /*

@@ -278,6 +278,7 @@ static int iommufd_cdev_autodomains_get(VFIODevice *vbasedev,
                                         Error **errp)
 {
     int iommufd = vbasedev->iommufd->fd;
+    uint32_t flags = 0;
     VFIOIOASHwpt *hwpt;
     Error *err = NULL;
     int ret = -EINVAL;
@@ -299,8 +300,13 @@ static int iommufd_cdev_autodomains_get(VFIODevice *vbasedev,
         }
     }
 
+    if ((!vfio_device_dirty_pages_supported(vbasedev)) ||
+        (vbasedev->idev.capabilities & IOMMU_HW_CAP_DIRTY_TRACKING)) {
+        flags = IOMMU_HWPT_ALLOC_DIRTY_TRACKING;
+    }
+
     ret = iommufd_backend_alloc_hwpt(iommufd, vbasedev->devid,
-                                     container->ioas_id, 0, 0, 0,
+                                     container->ioas_id, flags, 0, 0,
                                      NULL, &hwpt_id);
     if (ret) {
         error_append_hint(&err,

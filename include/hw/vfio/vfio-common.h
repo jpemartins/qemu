@@ -257,6 +257,7 @@ bool
 vfio_devices_all_running_and_mig_active(const VFIOContainerBase *bcontainer);
 bool
 vfio_devices_all_device_dirty_tracking(const VFIOContainerBase *bcontainer);
+bool vfio_device_dirty_pages_supported(VFIODevice *vbasedev);
 int vfio_devices_query_dirty_bitmap(const VFIOContainerBase *bcontainer,
                                     VFIOBitmap *vbmap, hwaddr iova,
                                     hwaddr size);

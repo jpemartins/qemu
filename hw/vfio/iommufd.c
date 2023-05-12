@@ -327,11 +327,34 @@ static int __vfio_device_detach_hwpt(VFIODevice *vbasedev, Error **errp)
     return ret;
 }
 
+static bool vfio_device_dirty_pages_supported(VFIODevice *vbasedev)
+{
+    if (vbasedev->pre_copy_dirty_page_tracking == ON_OFF_AUTO_OFF)
+        return false;
+
+    if (!vbasedev->migration)
+        return false;
+
+    return (vbasedev->migration->mig_flags & VFIO_MIGRATION_STOP_COPY) &&
+           !vbasedev->dirty_pages_supported;
+}
+
+static bool iommufd_dirty_pages_supported(IOMMUFDDevice *idev)
+{
+    uint64_t iommufd_caps = 0;
+    uint32_t type;
+
+    iommufd_device_get_info(idev, &type, 0, NULL, &iommufd_caps);
+
+    return (iommufd_caps & IOMMU_HW_CAP_DIRTY_TRACKING);
+}
+
 static int vfio_device_attach_container(VFIODevice *vbasedev,
                                         VFIOIOMMUFDContainer *container,
                                         Error **errp)
 {
     int ret, iommufd = vbasedev->iommufd->fd;
+    uint32_t flags = 0;
     VFIOIOASHwpt *hwpt;
     uint32_t hwpt_id;
     Error *err = NULL;
@@ -354,7 +377,12 @@ static int vfio_device_attach_container(VFIODevice *vbasedev,
                        TYPE_VFIO_IOMMU_DEVICE,
                        container->be->fd, vbasedev->devid, container->ioas_id);
 
-    ret = iommufd_backend_alloc_hwpt(iommufd, vbasedev->devid,
+    if ((!vfio_device_dirty_pages_supported(vbasedev)) ||
+        iommufd_dirty_pages_supported(&vbasedev->idev)) {
+        flags = IOMMU_HWPT_ALLOC_ENFORCE_DIRTY;
+    }
+
+    ret = iommufd_backend_alloc_hwpt(iommufd, vbasedev->devid, flags,
                                      container->ioas_id, &hwpt_id);
 
     if (ret) {

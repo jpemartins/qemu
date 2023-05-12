@@ -45,7 +45,7 @@ int iommufd_backend_map_dma(IOMMUFDBackend *be, uint32_t ioas, hwaddr iova,
 int iommufd_backend_copy_dma(IOMMUFDBackend *be, uint32_t src_ioas,
                              uint32_t dst_ioas, hwaddr iova,
                              ram_addr_t size, bool readonly);
-int iommufd_backend_alloc_hwpt(int iommufd, uint32_t dev_id,
+int iommufd_backend_alloc_hwpt(int iommufd, uint32_t dev_id, uint32_t flags,
                                uint32_t pt_id, uint32_t *out_hwpt);
 int iommufd_backend_set_dirty_tracking(IOMMUFDBackend *be, uint32_t hwpt_id,
                                        bool start);

@@ -64,7 +64,8 @@ struct IOMMUFDDevice {
 int iommufd_device_attach_hwpt(IOMMUFDDevice *idev, uint32_t hwpt_id);
 int iommufd_device_get_info(IOMMUFDDevice *idev,
                             enum iommu_hw_info_type *type,
-                            uint32_t len, void *data);
+                            uint32_t len, void *data,
+                            uint64_t *capabilities);
 int iommufd_device_detach_hwpt(IOMMUFDDevice *idev);
 void iommufd_device_init(void *_idev, size_t instance_size,
                          const char *mrtypename, int fd,

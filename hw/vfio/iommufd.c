@@ -275,8 +275,7 @@ static int iommufd_cdev_detach_ioas_hwpt(VFIODevice *vbasedev, Error **errp)
     return ret;
 }
 
-static bool iommufd_dirty_pages_supported(IOMMUFDDevice *iommufd_dev,
-                                          Error **errp)
+bool iommufd_dirty_pages_supported(IOMMUFDDevice *iommufd_dev, Error **errp)
 {
     uint64_t caps;
     int r;

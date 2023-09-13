@@ -40,6 +40,8 @@ int iommufd_backend_unmap_dma(IOMMUFDBackend *be, uint32_t ioas_id,
 
 int iommufd_device_get_hw_capabilities(IOMMUFDBackend *be, int dev_id,
                                        uint64_t *caps, Error **errp);
+bool iommufd_dirty_pages_supported(IOMMUFDBackend *iommufd, int devid,
+                                   Error **errp);
 int iommufd_backend_alloc_hwpt(IOMMUFDBackend *be, uint32_t dev_id,
                                uint32_t pt_id, uint32_t flags,
                                uint32_t data_type, uint32_t data_len,

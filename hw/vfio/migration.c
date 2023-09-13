@@ -16,6 +16,7 @@
 #include <sys/ioctl.h>
 
 #include "sysemu/runstate.h"
+#include "sysemu/iommufd.h"
 #include "hw/vfio/vfio-common.h"
 #include "migration/migration.h"
 #include "migration/options.h"
@@ -938,7 +939,10 @@ bool vfio_migration_realize(VFIODevice *vbasedev, Error **errp)
         return !vfio_block_migration(vbasedev, err, errp);
     }
 
-    if (!vbasedev->dirty_pages_supported) {
+    if (!vbasedev->dirty_pages_supported &&
+        (vbasedev->iommufd &&
+         !iommufd_dirty_pages_supported(vbasedev->iommufd,
+                                        vbasedev->devid, &err))) {
         if (vbasedev->enable_migration == ON_OFF_AUTO_AUTO) {
             error_setg(&err,
                        "%s: VFIO device doesn't support device dirty tracking",

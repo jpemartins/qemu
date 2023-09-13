@@ -789,7 +789,7 @@
 # Since: 7.2
 ##
 { 'struct': 'IOMMUFDProperties',
-        'data': { '*fd': 'str' } }
+        'data': { '*fd': 'str', '*hugepages': 'bool' } }
 
 ##
 # @RngProperties:

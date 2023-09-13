@@ -301,7 +301,7 @@ static int iommufd_cdev_autodomains_get(VFIODevice *vbasedev,
     }
 
     if ((!vfio_device_dirty_pages_supported(vbasedev)) ||
-        (vbasedev->idev.capabilities & IOMMU_HW_CAP_DIRTY_TRACKING)) {
+        iommufd_dirty_pages_supported(&vbasedev->idev)) {
         flags = IOMMU_HWPT_ALLOC_DIRTY_TRACKING;
     }
 

@@ -32,6 +32,7 @@ int iommufd_device_get_info(IOMMUFDDevice *idev,
                             enum iommu_hw_info_type *type,
                             uint32_t len, void *data,
                             uint64_t *capabilities);
+bool iommufd_dirty_pages_supported(IOMMUFDDevice *idev);
 void iommufd_device_init(void *_idev, size_t instance_size,
                          IOMMUFDBackend *iommufd,
                          uint32_t dev_id, uint32_t hwpt_id);

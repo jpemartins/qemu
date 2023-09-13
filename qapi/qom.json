@@ -805,11 +805,12 @@
 #     (VFIO, VDPA, ...), and the file descriptor to be shared
 #     with other process, e.g. DPDK.  (default: QEMU opens
 #     /dev/iommu by itself)
+# @hugepages: whether hugepages are enabled in the iommu
 #
 # Since: 9.0
 ##
 { 'struct': 'IOMMUFDProperties',
-  'data': { '*fd': 'str' } }
+  'data': { '*fd': 'str', '*hugepages': 'bool' } }
 
 ##
 # @RngProperties:

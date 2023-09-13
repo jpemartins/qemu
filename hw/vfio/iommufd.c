@@ -519,6 +519,10 @@ static int iommufd_cdev_attach(const char *name, VFIODevice *vbasedev,
         goto err_alloc_ioas;
     }
 
+    if (!vbasedev->iommufd->hugepages) {
+        iommufd_backend_set_option(vbasedev->iommufd->fd, ioas_id,
+                                   IOMMU_OPTION_HUGE_PAGES, 0);
+    }
     trace_iommufd_cdev_alloc_ioas(vbasedev->iommufd->fd, ioas_id);
 
     container = g_malloc0(sizeof(*container));

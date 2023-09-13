@@ -268,4 +268,6 @@ int vfio_devices_query_dirty_bitmap(VFIOContainer *container,
 int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
                                  uint64_t size, ram_addr_t ram_addr);
 
+bool iommufd_dirty_pages_supported(IOMMUFDDevice *idev);
+
 #endif /* HW_VFIO_VFIO_COMMON_H */

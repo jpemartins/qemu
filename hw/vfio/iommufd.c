@@ -339,7 +339,7 @@ static bool vfio_device_dirty_pages_supported(VFIODevice *vbasedev)
            !vbasedev->dirty_pages_supported;
 }
 
-static bool iommufd_dirty_pages_supported(IOMMUFDDevice *idev)
+bool iommufd_dirty_pages_supported(IOMMUFDDevice *idev)
 {
     uint64_t iommufd_caps = 0;
     uint32_t type;

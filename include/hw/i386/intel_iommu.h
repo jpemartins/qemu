@@ -156,6 +156,8 @@ struct VTDIOTLBEntry {
     uint64_t mask;
     uint8_t access_flags;
     uint16_t sm_pe_flags;
+    dma_addr_t slpte_dma_base;
+    uint32_t slpte_dma_offset;
 };
 
 /* VT-d Source-ID Qualifier types */

@@ -92,10 +92,17 @@ typedef struct VFIOHostDMAWindow {
 
 typedef struct IOMMUFDBackend IOMMUFDBackend;
 
+typedef struct VFIOIOASHwpt {
+    uint32_t hwpt_id;
+    QLIST_HEAD(, VFIODevice) device_list;
+    QLIST_ENTRY(VFIOIOASHwpt) next;
+} VFIOIOASHwpt;
+
 typedef struct VFIOIOMMUFDContainer {
     VFIOContainerBase bcontainer;
     IOMMUFDBackend *be;
     uint32_t ioas_id;
+    QLIST_HEAD(, VFIOIOASHwpt) hwpt_list;
 } VFIOIOMMUFDContainer;
 
 typedef struct VFIODeviceOps VFIODeviceOps;
@@ -128,6 +135,8 @@ typedef struct VFIODevice {
     int devid;
     IOMMUFDBackend *iommufd;
     IOMMUFDDevice idev;
+    VFIOIOASHwpt *hwpt;
+    QLIST_ENTRY(VFIODevice) idev_next;
 } VFIODevice;
 
 struct VFIODeviceOps {

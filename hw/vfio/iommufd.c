@@ -224,10 +224,81 @@ static int iommufd_cdev_detach_ioas_hwpt(VFIODevice *vbasedev, Error **errp)
     return ret;
 }
 
+static int iommufd_cdev_autodomains_get(VFIODevice *vbasedev,
+                                        VFIOIOMMUFDContainer *container,
+                                        Error **errp)
+{
+    int iommufd = vbasedev->iommufd->fd;
+    VFIOIOASHwpt *hwpt;
+    Error *err = NULL;
+    int ret = -EINVAL;
+    uint32_t hwpt_id;
+
+    /* Try to find a domain */
+    QLIST_FOREACH(hwpt, &container->hwpt_list, next) {
+        ret = iommufd_cdev_attach_ioas_hwpt(vbasedev, hwpt->hwpt_id, &err);
+        if (ret) {
+            /* -EINVAL means the domain is incompatible with the device. */
+            if (ret == -EINVAL) {
+                continue;
+            }
+            return ret;
+        } else {
+            vbasedev->hwpt = hwpt;
+            QLIST_INSERT_HEAD(&hwpt->device_list, vbasedev, idev_next);
+            return 0;
+        }
+    }
+
+    ret = iommufd_backend_alloc_hwpt(iommufd, vbasedev->devid,
+                                     container->ioas_id, 0, 0, 0,
+                                     NULL, &hwpt_id);
+    if (ret) {
+        error_append_hint(&err,
+                   "Failed to allocate HWPT for device %s. Fallback to IOAS attach\n",
+                   vbasedev->name);
+        warn_report_err(err);
+        return ret;
+    }
+
+    hwpt = g_malloc0(sizeof(*hwpt));
+    hwpt->hwpt_id = hwpt_id;
+    QLIST_INIT(&hwpt->device_list);
+
+    ret = iommufd_cdev_attach_ioas_hwpt(vbasedev, hwpt->hwpt_id, &err);
+    if (ret) {
+        iommufd_backend_free_id(vbasedev->iommufd, hwpt->hwpt_id);
+        g_free(hwpt);
+        return ret;
+    }
+
+    vbasedev->hwpt = hwpt;
+    QLIST_INSERT_HEAD(&hwpt->device_list, vbasedev, idev_next);
+    QLIST_INSERT_HEAD(&container->hwpt_list, hwpt, next);
+    return 0;
+}
+
+static void iommufd_cdev_autodomains_put(VFIODevice *vbasedev,
+                                         VFIOIOMMUFDContainer *container)
+{
+    VFIOIOASHwpt *hwpt = vbasedev->hwpt;
+
+    QLIST_REMOVE(vbasedev, idev_next);
+    QLIST_REMOVE(hwpt, next);
+    if (QLIST_EMPTY(&hwpt->device_list)) {
+        iommufd_backend_free_id(vbasedev->iommufd, hwpt->hwpt_id);
+        g_free(hwpt);
+    }
+}
+
 static int iommufd_cdev_attach_container(VFIODevice *vbasedev,
                                          VFIOIOMMUFDContainer *container,
                                          Error **errp)
 {
+    if (!iommufd_cdev_autodomains_get(vbasedev, container, errp)) {
+        return 0;
+    }
+
     return iommufd_cdev_attach_ioas_hwpt(vbasedev, container->ioas_id, errp);
 }
 
@@ -235,6 +306,11 @@ static void iommufd_cdev_detach_container(VFIODevice *vbasedev,
                                           VFIOIOMMUFDContainer *container)
 {
     Error *err = NULL;
+
+    if (vbasedev->hwpt) {
+        iommufd_cdev_autodomains_put(vbasedev, container);
+        return;
+    }
 
     if (iommufd_cdev_detach_ioas_hwpt(vbasedev, &err)) {
         error_report_err(err);
@@ -375,6 +451,7 @@ static int iommufd_cdev_attach(const char *name, VFIODevice *vbasedev,
     container = g_malloc0(sizeof(*container));
     container->be = vbasedev->iommufd;
     container->ioas_id = ioas_id;
+    QLIST_INIT(&container->hwpt_list);
 
     bcontainer = &container->bcontainer;
     vfio_container_init(bcontainer, space, iommufd_vioc);

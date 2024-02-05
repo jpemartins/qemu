@@ -231,3 +231,28 @@ static void register_types(void)
 }
 
 type_init(register_types);
+
+int iommufd_device_get_hw_capabilities(IOMMUFDBackend *be, int dev_id,
+                                       uint64_t *caps, Error **errp)
+{
+    int ret, fd = be->fd;
+    struct iommu_hw_info info = {
+        .size = sizeof(info),
+        .flags = 0,
+        .dev_id = dev_id,
+        .data_len = 0,
+        .__reserved = 0,
+        .data_uptr = 0,
+        .out_capabilities = 0,
+    };
+
+    ret = ioctl(fd, IOMMU_GET_HW_INFO, &info);
+    if (ret) {
+        error_setg_errno(errp, errno,
+                         "Failed to get hardware info capabilities");
+    } else {
+        *caps = info.out_capabilities;
+    }
+
+    return ret;
+}

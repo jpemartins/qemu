@@ -33,4 +33,7 @@ int iommufd_backend_map_dma(IOMMUFDBackend *be, uint32_t ioas_id, hwaddr iova,
                             ram_addr_t size, void *vaddr, bool readonly);
 int iommufd_backend_unmap_dma(IOMMUFDBackend *be, uint32_t ioas_id,
                               hwaddr iova, ram_addr_t size);
+
+int iommufd_device_get_hw_capabilities(IOMMUFDBackend *be, int dev_id,
+                                       uint64_t *caps, Error **errp);
 #endif

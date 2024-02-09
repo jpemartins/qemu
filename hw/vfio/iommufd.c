@@ -218,11 +218,26 @@ static int iommufd_cdev_detach_ioas_hwpt(VFIODevice *vbasedev, Error **errp)
     return ret;
 }
 
+static bool iommufd_dirty_pages_supported(IOMMUFDBackend *iommufd, int devid,
+                                          Error **errp)
+{
+    uint64_t caps;
+    int r;
+
+    r = iommufd_device_get_hw_capabilities(iommufd, devid, &caps, errp);
+    if (r) {
+        return false;
+    }
+
+    return caps & IOMMU_HW_CAP_DIRTY_TRACKING;
+}
+
 static int iommufd_cdev_autodomains_get(VFIODevice *vbasedev,
                                         VFIOIOMMUFDContainer *container,
                                         Error **errp)
 {
     IOMMUFDBackend *iommufd = vbasedev->iommufd;
+    uint32_t flags = 0;
     VFIOIOASHwpt *hwpt;
     Error *err = NULL;
     int ret = -EINVAL;
@@ -244,9 +259,15 @@ static int iommufd_cdev_autodomains_get(VFIODevice *vbasedev,
         }
     }
 
+    if ((vfio_device_migration_supported(vbasedev) &&
+         !vfio_device_dirty_pages_supported(vbasedev)) ||
+        iommufd_dirty_pages_supported(iommufd, vbasedev->devid, &err)) {
+        flags = IOMMU_HWPT_ALLOC_DIRTY_TRACKING;
+    }
+
     ret = iommufd_backend_alloc_hwpt(iommufd,
                                      vbasedev->devid,
-                                     container->ioas_id, 0, 0, 0,
+                                     container->ioas_id, flags, 0, 0,
                                      NULL, &hwpt_id);
     if (ret) {
         error_append_hint(&err,
@@ -270,6 +291,8 @@ static int iommufd_cdev_autodomains_get(VFIODevice *vbasedev,
     vbasedev->hwpt = hwpt;
     QLIST_INSERT_HEAD(&hwpt->device_list, vbasedev, hwpt_next);
     QLIST_INSERT_HEAD(&container->hwpt_list, hwpt, next);
+    container->bcontainer.dirty_pages_supported =
+                              (flags & IOMMU_HWPT_ALLOC_DIRTY_TRACKING);
     return 0;
 }
 

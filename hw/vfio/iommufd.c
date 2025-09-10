@@ -62,7 +62,7 @@ static int iommufd_cdev_unmap_one(const VFIOContainerBase *bcontainer,
                                   hwaddr iova, ram_addr_t size,
                                   IOMMUTLBEntry *iotlb)
 {
-    const VFIOIOMMUFDContainer *container =
+    VFIOIOMMUFDContainer *container =
         container_of(bcontainer, VFIOIOMMUFDContainer, bcontainer);
     bool need_dirty_sync = false;
     Error *local_err = NULL;
@@ -74,6 +74,7 @@ static int iommufd_cdev_unmap_one(const VFIOContainerBase *bcontainer,
         if (!vfio_container_devices_dirty_tracking_is_supported(bcontainer) &&
             bcontainer->dirty_pages_supported) {
             ret = vfio_container_query_dirty_bitmap(bcontainer, iova, size,
+                                                    IOMMU_HWPT_GET_DIRTY_BITMAP_NO_CLEAR,
                                                     iotlb->translated_addr,
                                                     &local_err);
             if (ret) {
@@ -248,7 +249,7 @@ static int iommufd_query_dirty_bitmap(const VFIOContainerBase *bcontainer,
         if (!iommufd_backend_get_dirty_bitmap(container->be, hwpt->hwpt_id,
                                               iova, size, page_size,
                                               (uint64_t *)vbmap->bitmap,
-                                              errp)) {
+                                              flags, errp)) {
             return -EINVAL;
         }
     }
